@@ -1,6 +1,4 @@
-# Timing Constraints for Audio DSP Project with MCLK
-# Save this as timing_constraints.sdc
-# Add to project: Project -> Add/Remove Files in Project
+# Timing Constraints for Audio DSP Project
 
 # Create base clock constraint for 50MHz system clock
 create_clock -name clk_50mhz -period 20.000 [get_ports clk_50mhz]
@@ -8,27 +6,20 @@ create_clock -name clk_50mhz -period 20.000 [get_ports clk_50mhz]
 # Derive PLL clocks automatically from PLL IP
 derive_pll_clocks -create_base_clocks
 
-# Set false paths for asynchronous reset
+# Set asynchronous paths to false, so they are ignored during analysis
 set_false_path -from [get_ports reset_n] -to [all_registers]
-
-# MIDI serial data is asynchronous, set false path
 set_false_path -from [get_ports midi_rx] -to [all_registers]
+set_false_path -to [get_ports {test_point_1 test_point_2}]
+set_false_path -to [get_ports {led[0] led[1] led[2] led[3]}]
 
-# I2S clock domain constraints (will be derived from PLL)
-# The audio_pll will generate 12.288MHz which gets divided down to:
+# I2S clock domain constraints
+# audio_pll generates 12.288MHz which gets divided to:
+# - 12.288MHz for MCLK
 # - 3.072MHz for BCLK
 # - 48kHz for LRCLK
-# - 12.288MHz for MCLK (master clock)
 
-# Set output delay constraints for I2S signals (relative to audio PLL clock)
+# I2S clocks must be constrained to within +/-5ns delay
 set_output_delay -clock [get_clocks {*audio_pll*}] -max 5.0 [get_ports {i2s_mclk i2s_bclk i2s_lrclk i2s_dout}]
 set_output_delay -clock [get_clocks {*audio_pll*}] -min -5.0 [get_ports {i2s_mclk i2s_bclk i2s_lrclk i2s_dout}]
-
-# Set input delay constraints for I2S input data
 set_input_delay -clock [get_clocks {*audio_pll*}] -max 5.0 [get_ports i2s_din]
 set_input_delay -clock [get_clocks {*audio_pll*}] -min -5.0 [get_ports i2s_din]
-
-# MCLK is a high-frequency output that should have minimal skew
-# Add specific constraints for MCLK if needed for your board layout
-# set_output_delay -clock [get_clocks {*audio_pll*}] -max 2.0 [get_ports i2s_mclk]
-# set_output_delay -clock [get_clocks {*audio_pll*}] -min -2.0 [get_ports i2s_mclk]
