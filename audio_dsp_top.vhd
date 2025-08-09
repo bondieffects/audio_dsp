@@ -1,4 +1,4 @@
--- Real-time Audio Digital Signal Processor with MIDI Control
+-- Real-time Audio DSP with Dedicated Bit Crusher
 -- Top-level entity for Cyclone IV FPGA
 -- Author: Group 10
 -- Device: EP4CE6E22C8N
@@ -42,13 +42,16 @@ architecture rtl of audio_dsp_top is
     -- Audio data signals
     signal audio_left_in   : std_logic_vector(15 downto 0);
     signal audio_right_in  : std_logic_vector(15 downto 0);
+    signal audio_valid_in  : std_logic;
+    
+    -- Bit crusher signals
+    signal crushed_left_out  : std_logic_vector(15 downto 0);
+    signal crushed_right_out : std_logic_vector(15 downto 0);
+    signal crushed_valid_out : std_logic;
+    
+    -- Volume controlled output
     signal audio_left_out  : std_logic_vector(15 downto 0);
     signal audio_right_out : std_logic_vector(15 downto 0);
-    signal audio_valid     : std_logic;
-    
-    -- Processed audio signals
-    signal audio_left_processed  : std_logic_vector(15 downto 0);
-    signal audio_right_processed : std_logic_vector(15 downto 0);
     
     -- MIDI interface signals
     signal midi_data       : std_logic_vector(7 downto 0);
@@ -61,6 +64,11 @@ architecture rtl of audio_dsp_top is
     signal master_volume   : std_logic_vector(7 downto 0);
     signal param_updated   : std_logic;
     signal midi_channel    : std_logic_vector(3 downto 0);
+    
+    -- Bit crusher control mapping
+    signal crusher_bit_depth : std_logic_vector(3 downto 0);
+    signal crusher_decimation : std_logic_vector(3 downto 0);
+    signal crusher_mix_level  : std_logic_vector(7 downto 0);
     
     -- Component declarations
     component i2s_clock_gen is
@@ -115,6 +123,22 @@ architecture rtl of audio_dsp_top is
         );
     end component;
     
+    component bit_crusher is
+        port (
+            clk             : in  std_logic;
+            reset_n         : in  std_logic;
+            audio_in_left   : in  std_logic_vector(15 downto 0);
+            audio_in_right  : in  std_logic_vector(15 downto 0);
+            audio_valid_in  : in  std_logic;
+            bit_depth       : in  std_logic_vector(3 downto 0);
+            decimation      : in  std_logic_vector(3 downto 0);
+            mix_level       : in  std_logic_vector(7 downto 0);
+            audio_out_left  : out std_logic_vector(15 downto 0);
+            audio_out_right : out std_logic_vector(15 downto 0);
+            audio_valid_out : out std_logic
+        );
+    end component;
+    
 begin
     
     -- Instantiate I2S clock generator
@@ -139,9 +163,9 @@ begin
             i2s_dout        => i2s_dout,
             audio_left_in   => audio_left_in,
             audio_right_in  => audio_right_in,
-            audio_left_out  => audio_left_processed,
-            audio_right_out => audio_right_processed,
-            audio_valid     => audio_valid
+            audio_left_out  => audio_left_out,
+            audio_right_out => audio_right_out,
+            audio_valid     => audio_valid_in
         );
     
     -- Instantiate MIDI UART receiver
@@ -169,109 +193,98 @@ begin
             midi_channel    => midi_channel
         );
     
-    -- Connect I2S clocks to outputs
-    i2s_bclk  <= i2s_bclk_int;
-    i2s_lrclk <= i2s_lrclk_int;
+    -- Map MIDI parameters to bit crusher controls
+    parameter_mapping : process(clk_audio, reset_n)
+    begin
+        if reset_n = '0' then
+            crusher_bit_depth <= x"F";    -- No crushing (16-bit)
+            crusher_decimation <= x"0";   -- No decimation
+            crusher_mix_level <= x"FF";   -- Full wet (100% effect)
+            
+        elsif rising_edge(clk_audio) then
+            -- Bit depth: MIDI range 0-15 maps directly to crusher range 0-15
+            -- where 0 = 1-bit crushing, 15 = 16-bit (no crushing)
+            crusher_bit_depth <= bitcrush_depth;
+            
+            -- Decimation: MIDI range 0-15 maps directly to crusher range 0-15
+            crusher_decimation <= sample_decimate;
+            
+            -- Mix level: Always 100% wet for bit crusher
+            -- Volume control is applied after bit crushing
+            crusher_mix_level <= x"FF";
+        end if;
+    end process;
     
-    -- DSP Processing
-    dsp_process : process(clk_audio, reset_n)
+    -- Instantiate bit crusher
+    u_bit_crusher : bit_crusher
+        port map (
+            clk             => clk_audio,
+            reset_n         => reset_n,
+            audio_in_left   => audio_left_in,
+            audio_in_right  => audio_right_in,
+            audio_valid_in  => audio_valid_in,
+            bit_depth       => crusher_bit_depth,
+            decimation      => crusher_decimation,
+            mix_level       => crusher_mix_level,
+            audio_out_left  => crushed_left_out,
+            audio_out_right => crushed_right_out,
+            audio_valid_out => crushed_valid_out
+        );
+    
+    -- Master volume control (applied after bit crushing)
+    volume_control : process(clk_audio, reset_n)
         variable left_temp  : signed(31 downto 0);
         variable right_temp : signed(31 downto 0);
         variable volume_mult : unsigned(7 downto 0);
-        
-        -- Bit crushing variables
-        variable crush_shift : natural range 0 to 15;
-        variable left_crushed : signed(15 downto 0);
-        variable right_crushed : signed(15 downto 0);
-        
-        -- Sample decimation variables
-        variable decimate_counter : unsigned(3 downto 0) := (others => '0');
-        variable decimate_threshold : unsigned(3 downto 0);
-        variable hold_left : signed(15 downto 0) := (others => '0');
-        variable hold_right : signed(15 downto 0) := (others => '0');
-        
     begin
         if reset_n = '0' then
-            audio_left_processed <= (others => '0');
-            audio_right_processed <= (others => '0');
-            decimate_counter := (others => '0');
-            hold_left := (others => '0');
-            hold_right := (others => '0');
+            audio_left_out <= (others => '0');
+            audio_right_out <= (others => '0');
             
         elsif rising_edge(clk_audio) then
-            if audio_valid = '1' then
-                -- Convert inputs to signed
-                left_temp := resize(signed(audio_left_in), 32);
-                right_temp := resize(signed(audio_right_in), 32);
-                
-                -- Apply bit crushing
-                crush_shift := to_integer(unsigned(bitcrush_depth));
-                if crush_shift < 16 then
-                    -- Shift right to remove bits, then shift back
-                    left_crushed := resize(shift_right(shift_left(left_temp, 16 - crush_shift), 16 - crush_shift), 16);
-                    right_crushed := resize(shift_right(shift_left(right_temp, 16 - crush_shift), 16 - crush_shift), 16);
-                else
-                    -- Full bit depth (no crushing)
-                    left_crushed := signed(audio_left_in);
-                    right_crushed := signed(audio_right_in);
-                end if;
-                
-                -- Apply sample decimation (sample and hold)
-                decimate_threshold := unsigned(sample_decimate);
-                if decimate_counter = 0 then
-                    -- Update held samples
-                    hold_left := left_crushed;
-                    hold_right := right_crushed;
-                end if;
-                
-                -- Increment decimation counter
-                if decimate_threshold > 0 then
-                    if decimate_counter >= decimate_threshold then
-                        decimate_counter := (others => '0');
-                    else
-                        decimate_counter := decimate_counter + 1;
-                    end if;
-                else
-                    decimate_counter := (others => '0');
-                end if;
-                
-                -- Apply master volume
+            if crushed_valid_out = '1' then
                 volume_mult := unsigned(master_volume);
-                left_temp := resize(hold_left * signed('0' & volume_mult), 32);
-                right_temp := resize(hold_right * signed('0' & volume_mult), 32);
+                
+                -- Apply volume scaling
+                left_temp := signed(crushed_left_out) * signed('0' & volume_mult);
+                right_temp := signed(crushed_right_out) * signed('0' & volume_mult);
                 
                 -- Scale back down (divide by 128 to maintain roughly same amplitude)
                 left_temp := shift_right(left_temp, 7);
                 right_temp := shift_right(right_temp, 7);
                 
-                -- Clamp to 16-bit range
+                -- Clamp to 16-bit range with saturation
                 if left_temp > 32767 then
-                    audio_left_processed <= std_logic_vector(to_signed(32767, 16));
+                    audio_left_out <= std_logic_vector(to_signed(32767, 16));
                 elsif left_temp < -32768 then
-                    audio_left_processed <= std_logic_vector(to_signed(-32768, 16));
+                    audio_left_out <= std_logic_vector(to_signed(-32768, 16));
                 else
-                    audio_left_processed <= std_logic_vector(resize(left_temp, 16));
+                    audio_left_out <= std_logic_vector(resize(left_temp, 16));
                 end if;
                 
                 if right_temp > 32767 then
-                    audio_right_processed <= std_logic_vector(to_signed(32767, 16));
+                    audio_right_out <= std_logic_vector(to_signed(32767, 16));
                 elsif right_temp < -32768 then
-                    audio_right_processed <= std_logic_vector(to_signed(-32768, 16));
+                    audio_right_out <= std_logic_vector(to_signed(-32768, 16));
                 else
-                    audio_right_processed <= std_logic_vector(resize(right_temp, 16));
+                    audio_right_out <= std_logic_vector(resize(right_temp, 16));
                 end if;
             end if;
         end if;
     end process;
     
+    -- Connect I2S clocks to outputs
+    i2s_bclk  <= i2s_bclk_int;
+    i2s_lrclk <= i2s_lrclk_int;
+    
     -- Status LEDs
     led(0) <= pll_locked;           -- PLL lock status
-    led(1) <= audio_valid;          -- Audio data valid
+    led(1) <= audio_valid_in;       -- Audio input valid
     led(2) <= param_updated;        -- MIDI parameter update
     led(3) <= midi_error;           -- MIDI error indicator
     
     -- Test points for debugging
     test_point_1 <= i2s_bclk_int;
-    test_point_2 <= midi_valid;     -- MIDI activity indicator
+    test_point_2 <= crushed_valid_out;  -- Bit crusher output valid
     
 end architecture rtl;
