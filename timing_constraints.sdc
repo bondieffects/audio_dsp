@@ -1,4 +1,4 @@
-# Timing Constraints for Audio DSP Project
+# Timing Constraints for Audio DSP Project with MCLK
 # Save this as timing_constraints.sdc
 # Add to project: Project -> Add/Remove Files in Project
 
@@ -18,11 +18,17 @@ set_false_path -from [get_ports midi_rx] -to [all_registers]
 # The audio_pll will generate 12.288MHz which gets divided down to:
 # - 3.072MHz for BCLK
 # - 48kHz for LRCLK
+# - 12.288MHz for MCLK (master clock)
 
-# Set output delay constraints for I2S signals (relative to BCLK)
-set_output_delay -clock [get_clocks {*audio_pll*}] -max 5.0 [get_ports {i2s_bclk i2s_lrclk i2s_dout}]
-set_output_delay -clock [get_clocks {*audio_pll*}] -min -5.0 [get_ports {i2s_bclk i2s_lrclk i2s_dout}]
+# Set output delay constraints for I2S signals (relative to audio PLL clock)
+set_output_delay -clock [get_clocks {*audio_pll*}] -max 5.0 [get_ports {i2s_mclk i2s_bclk i2s_lrclk i2s_dout}]
+set_output_delay -clock [get_clocks {*audio_pll*}] -min -5.0 [get_ports {i2s_mclk i2s_bclk i2s_lrclk i2s_dout}]
 
 # Set input delay constraints for I2S input data
 set_input_delay -clock [get_clocks {*audio_pll*}] -max 5.0 [get_ports i2s_din]
 set_input_delay -clock [get_clocks {*audio_pll*}] -min -5.0 [get_ports i2s_din]
+
+# MCLK is a high-frequency output that should have minimal skew
+# Add specific constraints for MCLK if needed for your board layout
+# set_output_delay -clock [get_clocks {*audio_pll*}] -max 2.0 [get_ports i2s_mclk]
+# set_output_delay -clock [get_clocks {*audio_pll*}] -min -2.0 [get_ports i2s_mclk]

@@ -7,6 +7,7 @@ set_location_assignment PIN_23 -to clk_50mhz
 set_location_assignment PIN_88 -to reset_n
 
 # I2S Interface Pins (connect to WM8731 CODEC)
+set_location_assignment PIN_28 -to i2s_mclk
 set_location_assignment PIN_30 -to i2s_bclk
 set_location_assignment PIN_31 -to i2s_lrclk
 set_location_assignment PIN_32 -to i2s_din
@@ -21,13 +22,14 @@ set_location_assignment PIN_85 -to led[1]
 set_location_assignment PIN_86 -to led[2]
 set_location_assignment PIN_87 -to led[3]
 
-# Test Points for debugging (changed to output-capable pins)
-set_location_assignment PIN_133 -to test_point_1
-set_location_assignment PIN_135 -to test_point_2
+# Test Points for debugging
+set_location_assignment PIN_90 -to test_point_1
+set_location_assignment PIN_91 -to test_point_2
 
 # I/O Standards
 set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to clk_50mhz
 set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to reset_n
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to i2s_mclk
 set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to i2s_bclk
 set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to i2s_lrclk
 set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to i2s_din

@@ -3,42 +3,47 @@
 -- Author: Group 10
 -- Device: EP4CE6E22C8N
 
-library IEEE;
-use IEEE.std_logic_1164.all;
-use IEEE.numeric_std.all;
+
+-- Libraries
+library IEEE;                   -- Standard library
+use IEEE.std_logic_1164.all;    -- Standard logic types (0, 1, Z, X)
+use IEEE.numeric_std.all;       -- Numeric types (signed, unsigned)
 
 entity audio_dsp_top is
+    -- port() specifies all external connections used by this module
     port (
-        -- System clock (50MHz)
+        -- Main system clock (50MHz)
         clk_50mhz : in std_logic;
-        reset_n   : in std_logic;
-        
+        reset_n   : in std_logic;   -- Active low reset
+
         -- I2S Interface to WM8731 CODEC
+        i2s_mclk  : out std_logic;  -- Master clock (12.288MHz)
         i2s_bclk  : out std_logic;  -- Bit clock (3.072MHz)
         i2s_lrclk : out std_logic;  -- Left/Right clock (48kHz)
         i2s_din   : in  std_logic;  -- Data from CODEC ADC
         i2s_dout  : out std_logic;  -- Data to CODEC DAC
-        
+
         -- MIDI Interface from Arduino
         midi_rx   : in  std_logic;  -- MIDI data at 31250 baud
-        
+
         -- Debug/Status LEDs
-        led       : out std_logic_vector(3 downto 0);
-        
+        led       : out std_logic_vector(3 downto 0);   -- 4-bit vector.
+
         -- Test points for debugging
         test_point_1 : out std_logic;
         test_point_2 : out std_logic
     );
 end entity audio_dsp_top;
 
+-- TODO: review and add comments from here down
 architecture rtl of audio_dsp_top is
-    
+
     -- Clock signals
     signal clk_audio     : std_logic;  -- Audio clock domain (12.288MHz)
     signal i2s_bclk_int  : std_logic;  -- Internal BCLK
     signal i2s_lrclk_int : std_logic;  -- Internal LRCLK
     signal pll_locked    : std_logic;  -- PLL lock indicator
-    
+
     -- Audio data signals
     signal audio_left_in   : std_logic_vector(15 downto 0);
     signal audio_right_in  : std_logic_vector(15 downto 0);
@@ -170,6 +175,7 @@ begin
         );
     
     -- Connect I2S clocks to outputs
+    i2s_mclk  <= clk_audio;      -- NEW: Master clock output
     i2s_bclk  <= i2s_bclk_int;
     i2s_lrclk <= i2s_lrclk_int;
     
