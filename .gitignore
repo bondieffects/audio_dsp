@@ -156,3 +156,7 @@ db/audio_dsp.quiproj.4600.rdr.flock
 .qsys_edit/filters.xml
 .qsys_edit/preferences.xml
 audio_dsp.qws
+db/audio_dsp.(10).cnf.cdb
+db/audio_dsp.(10).cnf.hdb
+output_files/audio_dsp.cdf
+midi_test_simple.vhd

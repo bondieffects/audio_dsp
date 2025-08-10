@@ -1,8 +1,7 @@
 -- Real-time Audio Digital Signal Processor with MIDI Control
--- Top-level entity for Cyclone IV FPGA
+-- Top-level entity for Cyclone IV FPGA with 7-segment display
 -- Author: Group 10
 -- Device: EP4CE6E22C8N
-
 
 -- Libraries
 library IEEE;                   -- Standard library
@@ -27,7 +26,11 @@ entity audio_dsp_top is
         midi_rx   : in  std_logic;  -- MIDI data at 31250 baud
 
         -- Debug/Status LEDs
-        led       : out std_logic_vector(3 downto 0);   -- 4-bit vector.
+        led       : out std_logic_vector(3 downto 0);   -- 4-bit vector
+
+        -- 7-segment display for MIDI parameter monitoring
+        seg       : out std_logic_vector(6 downto 0);   -- 7-segment segments
+        seg_sel   : out std_logic_vector(3 downto 0);   -- Digit select
 
         -- Test points for debugging
         test_point_1 : out std_logic;
@@ -35,7 +38,6 @@ entity audio_dsp_top is
     );
 end entity audio_dsp_top;
 
--- TODO: review and add comments from here down
 architecture rtl of audio_dsp_top is
 
     -- Clock signals
@@ -72,6 +74,15 @@ architecture rtl of audio_dsp_top is
     signal bitcrush_depth_sync : std_logic_vector(3 downto 0) := (others => '0');
     signal sample_decimate_sync : std_logic_vector(3 downto 0) := (others => '0');
     signal master_volume_sync : std_logic_vector(7 downto 0) := (others => '0');
+
+    -- 7-segment display signals
+    signal display_counter : unsigned(15 downto 0) := (others => '0');
+    signal display_mode    : unsigned(1 downto 0) := "00";
+    signal current_param   : std_logic_vector(3 downto 0);
+    signal digit_0_data    : std_logic_vector(3 downto 0);  -- Rightmost - Bitcrush
+    signal digit_1_data    : std_logic_vector(3 downto 0);  -- Decimation  
+    signal digit_2_data    : std_logic_vector(3 downto 0);  -- Volume upper nibble
+    signal digit_3_data    : std_logic_vector(3 downto 0);  -- Leftmost - Channel
 
     -- Component declarations
     component i2s_clock_gen is
@@ -185,34 +196,97 @@ begin
     i2s_bclk  <= i2s_bclk_int;
     i2s_lrclk <= i2s_lrclk_int;
 
-    -- DSP process
+    -- DSP process (enhanced with proper bit crushing and volume control)
     dsp_process : process(clk_audio, reset_n)
+        variable left_temp  : signed(31 downto 0);
+        variable right_temp : signed(31 downto 0);
+        variable volume_mult : signed(8 downto 0);
+        variable crush_shift : natural range 0 to 15;
+        variable left_crushed : signed(15 downto 0);
+        variable right_crushed : signed(15 downto 0);
+        variable decimate_counter : unsigned(3 downto 0) := (others => '0');
+        variable decimate_threshold : unsigned(3 downto 0);
+        variable hold_left : signed(15 downto 0) := (others => '0');
+        variable hold_right : signed(15 downto 0) := (others => '0');
+        variable left_mult_temp : signed(24 downto 0);
+        variable right_mult_temp : signed(24 downto 0);
     begin
         if reset_n = '0' then
             audio_left_processed <= (others => '0');
             audio_right_processed <= (others => '0');
+            decimate_counter := (others => '0');
+            hold_left := (others => '0');
+            hold_right := (others => '0');
 
         elsif rising_edge(clk_audio) then
             if audio_valid = '1' then
-                -- Simple bit crushing - just mask lower bits
-                case bitcrush_depth_sync is
-                    when x"0" => 
-                        -- 1-bit (extreme crushing) - MSB + 15 zeros
-                        audio_left_processed <= audio_left_in(15) & (14 downto 0 => '0');
-                        audio_right_processed <= audio_right_in(15) & (14 downto 0 => '0');
-                    when x"1" | x"2" | x"3" => 
-                        -- 2-4 bit crushing - top 4 bits + 12 zeros
-                        audio_left_processed <= audio_left_in(15 downto 12) & (11 downto 0 => '0');
-                        audio_right_processed <= audio_right_in(15 downto 12) & (11 downto 0 => '0');
-                    when x"4" | x"5" | x"6" | x"7" => 
-                        -- 5-8 bit crushing - top 8 bits + 8 zeros
-                        audio_left_processed <= audio_left_in(15 downto 8) & (7 downto 0 => '0');
-                        audio_right_processed <= audio_right_in(15 downto 8) & (7 downto 0 => '0');
-                    when others => 
-                        -- No crushing
-                        audio_left_processed <= audio_left_in;
-                        audio_right_processed <= audio_right_in;
-                end case;
+                -- Convert inputs to signed
+                left_temp := resize(signed(audio_left_in), 32);
+                right_temp := resize(signed(audio_right_in), 32);
+                
+                -- Apply bit crushing with bounds checking
+                crush_shift := to_integer(unsigned(bitcrush_depth_sync));
+                if crush_shift < 16 then
+                    -- Ensure we don't shift by more than available bits
+                    if crush_shift > 0 then
+                        -- Shift right to remove bits, then shift back
+                        left_temp := shift_left(shift_right(left_temp, crush_shift), crush_shift);
+                        right_temp := shift_left(shift_right(right_temp, crush_shift), crush_shift);
+                    end if;
+                    left_crushed := resize(left_temp, 16);
+                    right_crushed := resize(right_temp, 16);
+                else
+                    -- Full bit depth (no crushing)
+                    left_crushed := signed(audio_left_in);
+                    right_crushed := signed(audio_right_in);
+                end if;
+                
+                -- Apply sample decimation (sample and hold)
+                decimate_threshold := unsigned(sample_decimate_sync);
+                if decimate_counter = 0 then
+                    -- Update held samples
+                    hold_left := left_crushed;
+                    hold_right := right_crushed;
+                end if;
+                
+                -- Increment decimation counter
+                if decimate_threshold > 0 then
+                    if decimate_counter >= decimate_threshold then
+                        decimate_counter := (others => '0');
+                    else
+                        decimate_counter := decimate_counter + 1;
+                    end if;
+                else
+                    decimate_counter := (others => '0');
+                end if;
+                
+                -- Apply master volume with proper bit width handling
+                volume_mult := signed('0' & master_volume_sync);  -- 9-bit signed
+                
+                -- Perform multiplication with proper sizing
+                left_mult_temp := hold_left * volume_mult;   -- 16 * 9 = 25 bits
+                right_mult_temp := hold_right * volume_mult; -- 16 * 9 = 25 bits
+                
+                -- Scale back down (divide by 128 to maintain roughly same amplitude)
+                left_temp := resize(shift_right(left_mult_temp, 7), 32);
+                right_temp := resize(shift_right(right_mult_temp, 7), 32);
+                
+                -- Clamp to 16-bit range
+                if left_temp > 32767 then
+                    audio_left_processed <= std_logic_vector(to_signed(32767, 16));
+                elsif left_temp < -32768 then
+                    audio_left_processed <= std_logic_vector(to_signed(-32768, 16));
+                else
+                    audio_left_processed <= std_logic_vector(resize(left_temp, 16));
+                end if;
+                
+                if right_temp > 32767 then
+                    audio_right_processed <= std_logic_vector(to_signed(32767, 16));
+                elsif right_temp < -32768 then
+                    audio_right_processed <= std_logic_vector(to_signed(-32768, 16));
+                else
+                    audio_right_processed <= std_logic_vector(resize(right_temp, 16));
+                end if;
             end if;
         end if;
     end process;
@@ -222,9 +296,9 @@ begin
     begin
         if reset_n = '0' then
             param_updated_sync <= (others => '0');
-            bitcrush_depth_sync <= (others => '0');
-            sample_decimate_sync <= (others => '0');
-            master_volume_sync <= (others => '0');
+            bitcrush_depth_sync <= x"F";  -- Default: no crushing
+            sample_decimate_sync <= x"0"; -- Default: no decimation
+            master_volume_sync <= x"7F";  -- Default: mid volume
         elsif rising_edge(clk_audio) then
             -- 3-stage synchronizer for parameter updates
             param_updated_sync <= param_updated_sync(1 downto 0) & param_updated;
@@ -238,14 +312,81 @@ begin
         end if;
     end process;
 
-    -- Status LEDs
-    led(0) <= pll_locked;                              -- PLL lock status
-    led(1) <= audio_valid;                             -- Audio data valid
-    led(2) <= param_updated_sync(2);                   -- MIDI parameter update sync
-    led(3) <= '1' when bitcrush_depth_sync /= x"F" else '0';  -- Bit crusher active
+    -- 7-segment display multiplexing counter (fast switching for persistence of vision)
+    display_counter_process : process(clk_50mhz, reset_n)
+    begin
+        if reset_n = '0' then
+            display_counter <= (others => '0');
+            display_mode <= "00";
+        elsif rising_edge(clk_50mhz) then
+            display_counter <= display_counter + 1;
+            -- Switch digits every 2^16 clocks (~1.3ms at 50MHz) for persistence of vision
+            if display_counter = 0 then
+                display_mode <= display_mode + 1;
+            end if;
+        end if;
+    end process;
+
+    -- Assign parameter data to display digits
+    digit_0_data <= bitcrush_depth;                -- Rightmost: Bitcrush depth
+    digit_1_data <= sample_decimate;               -- Decimation factor
+    digit_2_data <= master_volume(7 downto 4);     -- Volume upper nibble
+    digit_3_data <= midi_channel;                  -- Leftmost: MIDI channel
+
+    -- Select which digit to display based on multiplexing counter
+    display_mux_process : process(display_mode, digit_0_data, digit_1_data, digit_2_data, digit_3_data)
+    begin
+        case display_mode is
+            when "00" => 
+                current_param <= digit_0_data;  -- Bitcrush depth
+                seg_sel <= "1110";  -- Activate digit 0 (rightmost)
+            when "01" => 
+                current_param <= digit_1_data;  -- Sample decimation  
+                seg_sel <= "1101";  -- Activate digit 1
+            when "10" => 
+                current_param <= digit_2_data;  -- Master volume upper nibble
+                seg_sel <= "1011";  -- Activate digit 2
+            when "11" => 
+                current_param <= digit_3_data;  -- MIDI channel
+                seg_sel <= "0111";  -- Activate digit 3 (leftmost)
+            when others =>
+                current_param <= x"0";
+                seg_sel <= "1111";  -- All digits off
+        end case;
+    end process;
+
+    -- 7-segment decoder (hexadecimal) - Active LOW for common anode displays
+    seg_decoder_process : process(current_param)
+    begin
+        case current_param is
+            when x"0" => seg <= "0000001";  -- 0
+            when x"1" => seg <= "1001111";  -- 1
+            when x"2" => seg <= "0010010";  -- 2
+            when x"3" => seg <= "0000110";  -- 3
+            when x"4" => seg <= "1001100";  -- 4
+            when x"5" => seg <= "0100100";  -- 5
+            when x"6" => seg <= "0100000";  -- 6
+            when x"7" => seg <= "0001111";  -- 7
+            when x"8" => seg <= "0000000";  -- 8
+            when x"9" => seg <= "0000100";  -- 9
+            when x"A" => seg <= "0001000";  -- A
+            when x"B" => seg <= "1100000";  -- b
+            when x"C" => seg <= "0110001";  -- C
+            when x"D" => seg <= "1000010";  -- d
+            when x"E" => seg <= "0110000";  -- E
+            when x"F" => seg <= "0111000";  -- F
+            when others => seg <= "1111111"; -- blank (all off)
+        end case;
+    end process;
+
+    -- Status LEDs (enhanced)
+    led(0) <= pll_locked;                                      -- PLL lock status
+    led(1) <= audio_valid;                                     -- Audio data valid
+    led(2) <= param_updated;                                   -- MIDI parameter update
+    led(3) <= '1' when unsigned(bitcrush_depth) < 12 else '0'; -- Active crushing indicator
 
     -- Test points for debugging
-    test_point_1 <= i2s_bclk_int;
-    test_point_2 <= midi_valid;     -- MIDI activity indicator
+    test_point_1 <= i2s_bclk_int;    -- I2S bit clock
+    test_point_2 <= midi_valid;      -- MIDI activity indicator
 
 end architecture rtl;
