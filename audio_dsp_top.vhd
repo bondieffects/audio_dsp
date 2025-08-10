@@ -1,7 +1,7 @@
 -- Real-time Audio Digital Signal Processor with MIDI Control
--- Top-level entity for Cyclone IV FPGA with 7-segment display
--- Author: Group 10
--- Device: EP4CE6E22C8N
+-- Top-level entity for Cyclone IV FPGA
+-- Author: Group 10: Jon Ashley, Alix Guo, Finn Harvey
+-- Device: EP4CE6E22C8
 
 -- Libraries
 -- "IEEE defines the base set of functionality for VHDL in the standard package." p. 143 LaMeres
