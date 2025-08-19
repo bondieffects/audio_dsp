@@ -20,7 +20,7 @@ set_false_path -from [get_clocks clk_50mhz] -to [get_clocks {*audio_pll*}]
 set_false_path -from [get_clocks {*audio_pll*}] -to [get_clocks clk_50mhz]
 
 # Relax I2S interface timing - these are external interfaces
-set_false_path -to [get_ports {i2s_mclk i2s_bclk i2s_lrclk i2s_dout}]
+set_false_path -to [get_ports {i2s_mclk i2s_bclk i2s_ws i2s_dout}]
 set_false_path -from [get_ports i2s_din]
 
 # Set multicycle paths for slow MIDI interface

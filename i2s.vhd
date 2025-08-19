@@ -44,8 +44,14 @@ use altera_mf.all;
 -- ============================================================================
 -- The I2S master must generate the I2S clocks:
 --   - I2S Master Clock (MCLK)      12.288MHz from audio_pll (generated IP)
---   - I2S Bit Clock (BCLK)         3.072MHz (MCLK/4 = 64 × 48kHz for 16-bit stereo)
---   - I2S Word Select (WS)         48kHz (BCLK/64)
+--   - I2S Bit Clock (BCLK)         1.536MHz (MCLK/8 = 32 × 48kHz for 16-bit stereo)
+--   - I2S Word Select (WS)         48kHz (BCLK/32)
+
+-- LIBRARIES and PACKAGES for i2s_clocks
+library IEEE;
+use IEEE.std_logic_1164.all;
+use IEEE.numeric_std.all;
+
 
 entity i2s_clocks is 
     port (
@@ -54,8 +60,8 @@ entity i2s_clocks is
         reset_n : in std_logic;         -- Active low reset
 
         -- Outputs
-        i2s_bclk : out std_logic;       -- 3.072MHz bit clock
-        i2s_ws : out std_logic;         -- 48kHz left/right clock
+        i2s_bclk : out std_logic;       -- 1.536MHz bit clock
+        i2s_ws : out std_logic          -- 48kHz left/right clock
     );
 end entity i2s_clocks;
 
@@ -64,56 +70,65 @@ end entity i2s_clocks;
 -- operations (combinational logic) performed on that data between clock edges.
 architecture rtl of i2s_clocks is
 
-    -- Note: A signal is an internal wire in the FPGA,
-    --       not exposed to the external pins unless
-    --       connected to a port
-
     -- CLOCK DIVISION SIGNALS
-    -- Create signal busses for the clock dividers
-    -- An unsigned 3-bit counter will overflow after 8 ticks, dividing its input clock by 8
-    -- An unsigned 6-bit counter will overflow after 64 ticks, dividing its input clock by 64
-    signal bclk_counter : unsigned(2 downto 0) := "000";    -- Creates a 3-bit unsigned signal bus "bclk_counter"
-    signal ws_counter : unsigned(5 downto 0) := "000000";   -- Creates a 6-bit unsigned signal bus "ws_counter"
+    signal bclk_counter : unsigned(2 downto 0) := "000";    -- For BCLK generation (divide by 8)
+    signal ws_counter : unsigned(4 downto 0) := "00000";    -- For WS generation (count 32 BCLK cycles)
 
     -- OUTPUT CLOCK SIGNALS
-    signal bclk_signal : std_logic := '0'; -- Creates a boolean signal for the bclk
-    signal ws_signal : std_logic := '0';   -- Creates a boolean signal for the ws
+    signal bclk_signal : std_logic := '0';
+    
+    -- BCLK edge detection for WS counting
+    signal bclk_prev : std_logic := '0';
+    signal bclk_edge : std_logic := '0';
 
 begin
 
     -- ========================================================================
-    -- BCLK GENERATION: Divide 12.288MHz by 4 to get 1.536MHz
+    -- BCLK GENERATION: Divide 12.288MHz by 8 to get 1.536MHz
     -- ========================================================================
     process (i2s_mclk, reset_n)
     begin
         if reset_n = '0' then
-            bclk_counter <= "000";   -- Reset the counter to 0
-            bclk_signal <= '0';     -- Hold the BCLK low
+            bclk_counter <= "000";
+            bclk_signal <= '0';
         elsif rising_edge(i2s_mclk) then
-            bclk_counter <= bclk_counter + 1; -- Increment bclk_counter
-            if bclk_counter = "011" then  -- 3 in decimal (not "001")
+            bclk_counter <= bclk_counter + 1;
+            -- Toggle BCLK every 4 MCLK cycles (divide by 8 total)
+            if bclk_counter = "011" then  -- 3 in decimal
                 bclk_signal <= not bclk_signal;
+                bclk_counter <= "000";    -- Reset counter after toggle
             end if;
         end if;
     end process;
 
     -- ========================================================================
-    -- WS GENERATION: Divide 12.288MHz by 256 to get 48kHz
+    -- BCLK EDGE DETECTION
     -- ========================================================================
     process (i2s_mclk, reset_n)
     begin
         if reset_n = '0' then
-            ws_counter <= "000000"; -- Reset the counter to 0
-            ws_signal <= '0';       -- Hold the WS low
+            bclk_prev <= '0';
+            bclk_edge <= '0';
         elsif rising_edge(i2s_mclk) then
-            -- Count MCLK cycles to generate WS
-            -- For 48kHz: 12.288MHz / 256 = 48kHz
-            if bclk_counter = "01" then  -- Only count when BCLK would toggle
-                ws_counter <= ws_counter + 1;    -- Increment ws_counter
-                if ws_counter = "011111" then    -- Every 64 BCLK cycles (32 left + 32 right)
-                    ws_signal <= not ws_signal;  -- Toggle WS
-                    ws_counter <= "000000";      -- Reset counter after toggling
-                end if;
+            bclk_prev <= bclk_signal;
+            -- Detect rising edge of BCLK
+            bclk_edge <= bclk_signal and not bclk_prev;
+        end if;
+    end process;
+
+    -- ========================================================================
+    -- WS GENERATION: Count 32 BCLK cycles to get 48kHz
+    -- ========================================================================
+    -- For 16-bit I2S: 16 BCLK cycles per channel, 32 total per sample period
+    -- WS = 0 for left channel (counts 0-15), WS = 1 for right channel (counts 16-31)
+    process (i2s_mclk, reset_n)
+    begin
+        if reset_n = '0' then
+            ws_counter <= "00000";
+        elsif rising_edge(i2s_mclk) then
+            if bclk_edge = '1' then  -- Count on BCLK rising edges
+                ws_counter <= ws_counter + 1;
+                -- Counter automatically wraps from 31 back to 0 (5-bit counter)
             end if;
         end if;
     end process;
@@ -122,7 +137,7 @@ begin
     -- CONNECT SIGNALS TO OUTPUTS
     -- ========================================================================
     i2s_bclk <= bclk_signal;
-    i2s_ws <= ws_signal;
+    i2s_ws <= ws_counter(4);
 
 end architecture rtl;
 
@@ -133,9 +148,13 @@ end architecture rtl;
 --      1. Convert the internal parallel audio data to I2S serial format
 --      2. Serial multiplex the left and right channel data
 
+-- LIBRARIES and PACKAGES for i2s_tx
+library IEEE;
+use IEEE.std_logic_1164.all;
+use IEEE.numeric_std.all;
+
 entity i2s_tx is 
     port (
-
         -- Clocks and Reset
         i2s_bclk : in std_logic;
         i2s_ws : in std_logic;
@@ -144,11 +163,11 @@ entity i2s_tx is
         -- Parallel audio data inputs (16-bit samples)
         audio_left : in std_logic_vector(15 downto 0);      -- Left channel audio data
         audio_right : in std_logic_vector(15 downto 0);     -- Right channel audio data
-        audio_valid : in std_logic;                         -- TODO: are these used/necessary? TX Ready Flag
+        audio_valid : in std_logic;                         -- are these used/necessary? TX Ready Flag
 
         -- I2S Serial Data Outputs
         i2s_sdata : out std_logic;                          -- Serial data output (DAC_DATA)
-        sample_request : out std_logic;                     -- TODO: are these used/necessary? Sample request signal
+        sample_request : out std_logic                      -- are these used/necessary? Sample request signal
     );
 end entity i2s_tx;
 
@@ -167,7 +186,7 @@ architecture rtl of i2s_tx is
     signal ws_edge : std_logic := '0';
 
     -- Sample request generation
-    signal request_sample : std_logic := '0'; -- TODO: Again ensure this is requrired
+    signal request_sample : std_logic := '0'; -- Again ensure this is requrired
 
 begin
 
@@ -208,7 +227,7 @@ begin
                     i2s_sdata <= '0';
                     if ws_edge = '1' then
                         request_sample <= '1';      -- Request a new sample (LR pair)
-                        bit_counter <= '00000';
+                        bit_counter <= "00000";
 
                         if i2s_ws = '0' then
                             -- Transmit left channel data
@@ -266,6 +285,12 @@ end architecture rtl;
 --      1. Convert the I2S serial data to internal parallel audio format
 --      2. Serial multiplex the left and right channel data
 
+-- LIBRARIES and PACKAGES for i2s_rx
+library IEEE;
+use IEEE.std_logic_1164.all;
+use IEEE.numeric_std.all;
+
+
 entity i2s_rx is 
     port (
         -- Clock and reset
@@ -279,7 +304,7 @@ entity i2s_rx is
         -- Parallel Audio Output (16-bit samples)
         audio_left  : out std_logic_vector(15 downto 0);
         audio_right : out std_logic_vector(15 downto 0);
-        audio_valid : out std_logic;  -- TODO: are these used/necessary? RX Ready Flag
+        audio_valid : out std_logic                     -- RX Ready Flag
     );
 end entity i2s_rx;
 
@@ -287,11 +312,11 @@ architecture rtl of i2s_rx is
 
     -- Create a state machine for I2S data in
     type i2s_rx_state_t is (IDLE, LEFT_CHANNEL, RIGHT_CHANNEL);
-    signal rx_state : i2s_rx_state_t := IDLE; -- Create a signal for the RX state, initialised to IDLE
+    signal rx_state : i2s_rx_state_t := IDLE;
 
     -- Create a shift register for serial reception
-    signal rx_shift_register : std_logic_vector(15 downto 0) := (others => '0');    -- Create a 16-bit signal bus "rx_shift_register"
-    signal bit_counter : unsigned(4 downto 0) := "00000";                           -- Create a 5-bit counter to track the bit position
+    signal rx_shift_register : std_logic_vector(15 downto 0) := (others => '0');
+    signal bit_counter : unsigned(4 downto 0) := "00000";
 
     -- Word-select Edge Detector
     signal ws_prev : std_logic := '0';
@@ -310,11 +335,11 @@ begin
     process(i2s_bclk, reset_n)
     begin
         if reset_n = '0' then
-            ws_prev <= '0';     -- hold previous WS edge low
-            ws_edge <= '0';     -- hold WS edge low
+            ws_prev <= '0';
+            ws_edge <= '0';
         elsif rising_edge(i2s_bclk) then
             ws_prev <= i2s_ws;
-            ws_edge <= i2s_ws xor ws_prev;      -- true if i2s_ws is different from ws_prev
+            ws_edge <= i2s_ws xor ws_prev;
         end if;
     end process;
 
@@ -328,22 +353,22 @@ begin
     process(i2s_bclk, reset_n)
     begin
         if reset_n = '0' then
-            rx_state <= IDLE;                       -- Reset state machine to IDLE
-            rx_shift_register <= (others => '0');   -- Clear shift register
-            bit_counter <= "00000";                 -- Reset bit counter
-            audio_left <= (others => '0');          -- Clear left channel output
-            audio_right <= (others => '0');         -- Clear right channel output
-            audio_valid <= '0';                     -- Clear valid output flag
+            rx_state <= IDLE;
+            rx_shift_register <= (others => '0');
+            bit_counter <= "00000";
+            left_sample <= (others => '0');
+            right_sample <= (others => '0');
+            valid_output <= '0';
 
-        elsif rising_edge(i2s_bclk) then            -- Receive data on the rising edge
+        elsif rising_edge(i2s_bclk) then
 
             case rx_state is
 
             when IDLE =>
                 valid_output <= '0';
                 if ws_edge = '1' then
-                    bit_counter <= "00000";               -- Reset bit counter
-                    rx_shift_register <= (others => '0'); -- Clear shift register
+                    bit_counter <= "00000";
+                    rx_shift_register <= (others => '0');
 
                     if i2s_ws = '0' then
                         -- Start receiving left channel data
@@ -355,21 +380,21 @@ begin
                 end if;
 
             when LEFT_CHANNEL =>
-                rx_shift_register <= rx_shift_register(14 downto 0) & i2s_sdata;    -- Shift in data MSB first
-                bit_counter <= bit_counter + 1;                                     -- Increment bit counter
+                rx_shift_register <= rx_shift_register(14 downto 0) & i2s_sdata;
+                bit_counter <= bit_counter + 1;
 
-                if bit_counter = "01111" then                                       -- Verify all bits received
+                if bit_counter = "01111" then
                     left_sample <= rx_shift_register(14 downto 0) & i2s_sdata;
                     rx_state <= IDLE;
                 end if;
 
             when RIGHT_CHANNEL =>
-                rx_shift_register <= rx_shift_register(14 downto 0) & i2s_sdata;    -- Shift in data MSB first
-                bit_counter <= bit_counter + 1;                                     -- Increment bit counter
+                rx_shift_register <= rx_shift_register(14 downto 0) & i2s_sdata;
+                bit_counter <= bit_counter + 1;
 
-                if bit_counter = "01111" then                                       -- Verify all bits received
+                if bit_counter = "01111" then
                     right_sample <= rx_shift_register(14 downto 0) & i2s_sdata;
-                    valid_output <= '1';                                            -- both channels received
+                    valid_output <= '1';
                     rx_state <= IDLE;
                 end if;
 
@@ -380,9 +405,9 @@ begin
     -- ========================================================================
     -- CONNECT SIGNALS TO OUTPUTS
     -- ========================================================================
-    audio_left <= left_sample;      -- Output left channel data
-    audio_right <= right_sample;    -- Output right channel data
-    audio_valid <= valid_output;    -- Output valid flag
+    audio_left <= left_sample;
+    audio_right <= right_sample;
+    audio_valid <= valid_output;
 
 end architecture rtl;
 
@@ -395,6 +420,12 @@ end architecture rtl;
 -- 5. TOP-LEVEL I2S INTERFACE
 -- ========================================================================
 -- Integrate clock generator, transmitter and receiver
+
+-- LIBRARIES and PACKAGES for i2s
+library IEEE;
+use IEEE.std_logic_1164.all;
+use IEEE.numeric_std.all;
+
 
 entity i2s is 
     port (
@@ -418,7 +449,7 @@ entity i2s is
         -- Record Path (CODEC->FPGA)
         audio_in_left : out std_logic_vector(15 downto 0);      -- Left channel audio input
         audio_in_right : out std_logic_vector(15 downto 0);     -- Right channel audio input
-        audio_in_valid : out std_logic;                          -- Input valid signal
+        audio_in_valid : out std_logic                          -- Input valid signal
     );
 end entity i2s;
 
