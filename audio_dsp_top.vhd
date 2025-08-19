@@ -1,64 +1,147 @@
--- Real-time Audio Digital Signal Processor with MIDI Control
+-- Simple I2S Pass-Through System
 -- Top-level entity for Cyclone IV FPGA
 -- Author: Group 10: Jon Ashley, Alix Guo, Finn Harvey
 -- Device: EP4CE6E22C8
 
 -- Libraries
--- "IEEE defines the base set of functionality for VHDL in the standard package." p. 143 LaMeres
 library IEEE;
 use IEEE.std_logic_1164.all;
 use IEEE.numeric_std.all;
 
--- "The entity is where the inputs and outputs of the system are declared." p.164 LaMeres
 entity audio_dsp_top is
-    -- "A port is an input or output to a system that is declared in the entity" p.164 LaMeres
     port (
+        -- System clock (50MHz)
+        clk_50mhz : in std_logic;
+        reset_n   : in std_logic;   -- Active low reset
 
+        -- I2S Interface to WM8731 CODEC
+        i2s_mclk  : out std_logic;  -- Master clock (12.288MHz) - PIN_30
+        i2s_bclk  : out std_logic;  -- Bit clock (1.536MHz) - PIN_31
+        i2s_ws    : out std_logic;  -- Word select (48kHz) - PIN_32
+        i2s_din   : in  std_logic;  -- Data from CODEC ADC - PIN_33
+        i2s_dout  : out std_logic;  -- Data to CODEC DAC - PIN_34
+
+        -- Debug/Status LEDs
+        led       : out std_logic_vector(3 downto 0);   -- PIN_84 to 87
+
+        -- Test points for debugging
+        test_point_1 : out std_logic; -- PIN_50
+        test_point_2 : out std_logic  -- PIN_51
     );
 end entity audio_dsp_top;
 
--- "The architecture is where the behavior of the system is described." p. 164 LaMeres
--- "The architecture is where the majority of the design work is conducted" p. 147 LaMeres
--- Syntax:
---      architecture <architecture_name> of <entity associated with> is
---
 architecture rtl of audio_dsp_top is
 
-    -- 1. user-defined enumerated type declarations (optional)
-    --      none
-
-    -- 2. signal declarations
-    --      "A signal is an internal connection within the system that is declared
-    --      in the architecture. A signal is not visible outside of the system." p. 164 LaMeres
-
-    -- 3. Constant Declarations (optional)
-    --      "Useful for representing a quantity that will be used multiple times in the architecture" p. 148 LaMeres
-    --      Syntax: constant constant_name : <type> := <value>;
-
-    -- 4. Component Declarations (optional)
-    --      "A [component is a] VHDL subsystem that is instantiated within a higher level system" p. 149 LaMeres
-    --      Similar to an object in software programming
+    -- ========================================================================
+    -- COMPONENT DECLARATIONS
+    -- ========================================================================
     
+    -- Your existing audio_pll component
+    component audio_pll is
+        port (
+            areset  : in  std_logic := '0';
+            inclk0  : in  std_logic := '0';
+            c0      : out std_logic;
+            locked  : out std_logic
+        );
+    end component;
+    
+    -- Your existing i2s component
+    component i2s is
+        port (
+            i2s_mclk : in std_logic;
+            reset_n : in std_logic;
+            i2s_bclk : out std_logic;
+            i2s_ws : out std_logic;
+            i2s_dac : out std_logic;
+            i2s_adc : in std_logic;
+            audio_out_left : in std_logic_vector(15 downto 0);
+            audio_out_right : in std_logic_vector(15 downto 0);
+            audio_out_valid : in std_logic;
+            sample_request : out std_logic;
+            audio_in_left : out std_logic_vector(15 downto 0);
+            audio_in_right : out std_logic_vector(15 downto 0);
+            audio_in_valid : out std_logic
+        );
+    end component;
+
+    -- ========================================================================
+    -- INTERNAL SIGNALS
+    -- ========================================================================
+    
+    -- PLL signals
+    signal i2s_mclk_int  : std_logic;  -- 12.288MHz from PLL
+    signal pll_locked    : std_logic;  -- PLL lock status
+    signal pll_reset     : std_logic;  -- PLL reset (active high)
+    signal i2s_reset     : std_logic;  -- I2S reset (active low, gated by PLL lock)
+    
+    -- Internal I2S signals (avoid confusion with external pins)
+    signal i2s_bclk_int    : std_logic;
+    signal i2s_ws_int      : std_logic;
+    signal sample_request  : std_logic;
+    signal audio_in_left   : std_logic_vector(15 downto 0);
+    signal audio_in_right  : std_logic_vector(15 downto 0);
+    signal audio_in_valid  : std_logic;
+    
+    -- Simple pass-through - input directly connects to output
+    signal audio_out_valid : std_logic := '1';  -- Always valid
 
 begin
-    -- Behavioral description of the system goes here
 
-    -- Instantiate the components
-    -- Syntax:
-    --      instance_name : <component name>
-    --      port map (<port connections>);
+    -- ========================================================================
+    -- RESET LOGIC
+    -- ========================================================================
+    pll_reset <= not reset_n;                    -- PLL needs active high reset
+    i2s_reset <= reset_n and pll_locked;         -- I2S starts only after PLL locks
 
+    -- ========================================================================
+    -- PLL INSTANTIATION
+    -- ========================================================================
+    u_audio_pll : audio_pll
+        port map (
+            areset => pll_reset,
+            inclk0 => clk_50mhz,
+            c0     => i2s_mclk_int,
+            locked => pll_locked
+        );
 
+    -- ========================================================================
+    -- I2S INTERFACE INSTANTIATION
+    -- ========================================================================
+    u_i2s : i2s
+        port map (
+            i2s_mclk        => i2s_mclk_int,
+            reset_n         => i2s_reset,
+            i2s_bclk        => i2s_bclk_int,      -- Internal signal
+            i2s_ws          => i2s_ws_int,        -- Internal signal
+            i2s_dac         => i2s_dout,
+            i2s_adc         => i2s_din,
+            audio_out_left  => audio_in_left,    -- PASS-THROUGH: Input -> Output
+            audio_out_right => audio_in_right,   -- PASS-THROUGH: Input -> Output
+            audio_out_valid => audio_out_valid,
+            sample_request  => sample_request,
+            audio_in_left   => audio_in_left,
+            audio_in_right  => audio_in_right,
+            audio_in_valid  => audio_in_valid
+        );
 
-    -- Processes
-    -- "To model sequential logic, an HDL needs to be able to trigger signal assignments based
-    --  on a triggering event. This is accomplished in VHDL using a process." p. 298 LaMeres
-    -- A process is most similar to an ISR in traditional embedded programming.
-    -- Unlike ISRs, multiple processes can run concurrently in VHDL.
-    -- Syntax:
-    --      process (<sensitivity list>)
-    --      begin
-    --          <sequential statements>
-    --      end process;
+    -- ========================================================================
+    -- OUTPUT ASSIGNMENTS
+    -- ========================================================================
+    
+    -- I2S clock outputs (connect internal signals to external pins)
+    i2s_mclk <= i2s_mclk_int;     -- Send 12.288MHz master clock to CODEC
+    i2s_bclk <= i2s_bclk_int;     -- Send 1.536MHz bit clock to CODEC
+    i2s_ws   <= i2s_ws_int;       -- Send 48kHz word select to CODEC
+    
+    -- Status LEDs
+    led(0) <= pll_locked;         -- PLL lock indicator
+    led(1) <= audio_in_valid;     -- Audio input activity
+    led(2) <= sample_request;     -- Sample rate indicator (will blink at 48kHz)
+    led(3) <= i2s_reset;          -- I2S system active
+    
+    -- Test points for debugging
+    test_point_1 <= i2s_bclk_int;  -- Bit clock for scope measurement (1.536MHz)
+    test_point_2 <= sample_request; -- Sample rate timing (48kHz)
 
 end architecture rtl;

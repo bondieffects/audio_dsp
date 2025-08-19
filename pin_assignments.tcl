@@ -8,7 +8,7 @@ set_location_assignment PIN_25 -to reset_n
 # I2S Interface Pins (connect to WM8731 CODEC)
 set_location_assignment PIN_30 -to i2s_mclk
 set_location_assignment PIN_31 -to i2s_bclk
-set_location_assignment PIN_32 -to i2s_lrclk
+set_location_assignment PIN_32 -to i2s_ws
 set_location_assignment PIN_33 -to i2s_din
 set_location_assignment PIN_34 -to i2s_dout
 
