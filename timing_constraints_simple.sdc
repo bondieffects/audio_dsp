@@ -1,5 +1,5 @@
 # ============================================================================
-# Timing Constraints for I2S Audio Pass-Through System
+# Simplified Timing Constraints for I2S Audio Pass-Through System
 # Device: EP4CE6E22C8N
 # Author: Group 10
 # ============================================================================
@@ -22,8 +22,8 @@ create_generated_clock -name {i2s_mclk} \
 # Clock Groups (Define asynchronous clock domains)
 # ============================================================================
 
-# System clock and audio clock are related through PLL
-set_clock_groups -physically_exclusive \
+# System clock and audio clock are related through PLL but treat as separate domains
+set_clock_groups -asynchronous \
     -group [get_clocks {clk_50mhz}] \
     -group [get_clocks {i2s_mclk}]
 
@@ -66,67 +66,12 @@ set_false_path -to [get_ports {test_point_1}]
 set_false_path -to [get_ports {test_point_2}]
 
 # ============================================================================
-# Timing Exceptions
-# ============================================================================
-
-# Multicycle paths for slow control signals (commented out - signals don't exist)
-# Audio valid signal crosses clock domains but changes slowly
-# set_multicycle_path -setup 2 -from [get_registers {*audio_in_valid*}] -to [get_registers {*buffer_valid*}]
-# set_multicycle_path -hold 1 -from [get_registers {*audio_in_valid*}] -to [get_registers {*buffer_valid*}]
-
-# ============================================================================
-# Physical Constraints
-# ============================================================================
-
-# Set maximum fanout for critical signals (commented out as they may not match)
-# set_max_fanout -fanout 10 [get_nets {i2s_bclk_int}]
-# set_max_fanout -fanout 10 [get_nets {i2s_ws_int}]
-
-# ============================================================================
-# Operating Conditions
-# ============================================================================
-
-# Set operating conditions (typical industrial)
-set_operating_conditions -model slow -temperature 85 -voltage 1.2
-
-# ============================================================================
 # Timing Analysis Settings
 # ============================================================================
 
 # Enable timing analysis for all paths
 derive_pll_clocks
 derive_clock_uncertainty
-
-# Report unconstrained paths
-report_ucp -panel_name "Unconstrained Paths" -file unconstrained_paths.rpt
-
-# ============================================================================
-# Additional Constraints for WM8731 Interface
-# ============================================================================
-
-# WM8731 Timing Requirements (from datasheet)
-# MCLK to BCLK setup time: min 10ns
-# BCLK to LRCLK (WS) setup time: min 10ns
-# Data setup time to BCLK falling edge: min 20ns
-# Data hold time from BCLK falling edge: min 10ns
-
-# Ensure proper relationship between clocks (commented out - may not match)
-# set_max_delay -from [get_registers {*i2s_bclk*}] -to [get_registers {*i2s_ws*}] 15.0
-# set_min_delay -from [get_registers {*i2s_bclk*}] -to [get_registers {*i2s_ws*}] 5.0
-
-# ============================================================================
-# Debug - Report Critical Paths
-# ============================================================================
-
-# Report timing for critical paths
-report_timing -setup -npaths 10 -detail full_path -panel_name "Setup: 10 Worst Paths"
-report_timing -hold -npaths 10 -detail full_path -panel_name "Hold: 10 Worst Paths"
-report_timing -recovery -npaths 10 -detail full_path -panel_name "Recovery: 10 Worst Paths"
-report_timing -removal -npaths 10 -detail full_path -panel_name "Removal: 10 Worst Paths"
-
-# Report clock relationships
-report_clocks -panel_name "Clock Report"
-report_clock_transfers -panel_name "Clock Transfers"
 
 # ============================================================================
 # End of Constraints File

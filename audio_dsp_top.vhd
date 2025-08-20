@@ -66,27 +66,33 @@ architecture rtl of audio_dsp_top is
     -- ========================================================================
     -- INTERNAL SIGNALS
     -- ========================================================================
-    
+
     -- PLL signals
     signal clk_audio     : std_logic;  -- 12.288MHz from PLL
     signal pll_locked    : std_logic;  -- PLL lock status
     signal pll_reset     : std_logic;  -- PLL reset (active high)
     signal i2s_reset     : std_logic;  -- I2S reset (active low, gated by PLL lock)
-    
+
     -- Internal I2S clock signals
     signal i2s_bclk_int  : std_logic;
     signal i2s_ws_int    : std_logic;
-    
+
     -- Audio data flow signals
     signal audio_in_left   : std_logic_vector(15 downto 0);
     signal audio_in_right  : std_logic_vector(15 downto 0);
     signal audio_in_valid  : std_logic;
     signal sample_request  : std_logic;
-    
+
     -- Pass-through signals (input connects to output)
     signal audio_out_left  : std_logic_vector(15 downto 0);
     signal audio_out_right : std_logic_vector(15 downto 0);
     signal audio_out_valid : std_logic;
+
+    -- Audio buffering signals
+    signal audio_buffer_left   : std_logic_vector(15 downto 0);
+    signal audio_buffer_right  : std_logic_vector(15 downto 0);
+    signal buffer_valid        : std_logic;
+
 
 begin
 
@@ -110,29 +116,21 @@ begin
     -- ========================================================================
     -- SIMPLE PASS-THROUGH PROCESSING
     -- ========================================================================
-    -- This process simply connects input audio to output audio
-    process(clk_audio, reset_n)
+    -- Always provide data to transmitter (no complex handshaking)
+    process(clk_audio, i2s_reset)
     begin
-        if reset_n = '0' then
+        if i2s_reset = '0' then
             audio_out_left <= (others => '0');
             audio_out_right <= (others => '0');
-            audio_out_valid <= '0';
+            audio_out_valid <= '1';  -- Always indicate data is available
         elsif rising_edge(clk_audio) then
-            if sample_request = '1' then
-                if audio_in_valid = '1' then
-                    -- Pass-through: Input audio -> Output audio
-                    audio_out_left  <= audio_in_left;
-                    audio_out_right <= audio_in_right;
-                    audio_out_valid <= '1';
-                else
-                    -- No input audio - send silence
-                    audio_out_left  <= (others => '0');
-                    audio_out_right <= (others => '0');
-                    audio_out_valid <= '1';
-                end if;
-            else
-                audio_out_valid <= '0';
+            -- Always pass through the latest received data
+            if audio_in_valid = '1' then
+                audio_out_left <= audio_in_left;
+                audio_out_right <= audio_in_right;
             end if;
+            -- Always keep valid high - transmitter can always use current data
+            audio_out_valid <= '1';
         end if;
     end process;
 
@@ -165,14 +163,14 @@ begin
     i2s_bclk  <= i2s_bclk_int;     -- Send 1.536MHz bit clock to CODEC
     i2s_ws <= i2s_ws_int;       -- Send 48kHz word select to CODEC (corrected name)
     
-    -- Status LEDs
-    led(0) <= pll_locked;          -- PLL lock indicator
-    led(1) <= audio_in_valid;      -- Audio input activity
-    led(2) <= sample_request;      -- Sample rate indicator (will blink fast)
-    led(3) <= i2s_reset;           -- I2S system active
+    -- Status LEDs (inverted for active-low LEDs)
+    led(0) <= not pll_locked;          -- PLL lock indicator (inverted)
+    led(1) <= not audio_in_valid;      -- Audio input activity (inverted)
+    led(2) <= not sample_request;      -- Sample rate indicator (inverted)
+    led(3) <= not i2s_reset;           -- I2S system active (inverted)
     
     -- Test points for debugging
-    test_point_1 <= i2s_bclk_int;  -- Bit clock for scope measurement (1.536MHz)
-    test_point_2 <= sample_request; -- Sample rate timing (48kHz)
+    test_point_1 <= pll_locked;       -- Check PLL lock status directly
+    test_point_2 <= i2s_reset;        -- Check I2S reset status directly
 
 end architecture rtl;
