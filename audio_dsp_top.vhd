@@ -114,43 +114,19 @@ begin
         );
 
     -- ========================================================================
-    -- SAMPLE-HOLD PASS-THROUGH PROCESSING (prevents mid-frame updates)
+    -- DIRECT PASS-THROUGH (simplest possible approach)
     -- ========================================================================
-    -- Hold audio data stable for entire I2S frame to prevent glitches
+    -- Direct connection with minimal processing to isolate the issue
     process(clk_audio, i2s_reset)
-        variable sample_hold_left  : std_logic_vector(15 downto 0);
-        variable sample_hold_right : std_logic_vector(15 downto 0);
-        variable frame_start_detected : std_logic := '0';
     begin
         if i2s_reset = '0' then
             audio_out_left <= (others => '0');
             audio_out_right <= (others => '0');
-            audio_buffer_left <= (others => '0');
-            audio_buffer_right <= (others => '0');
             audio_out_valid <= '1';
-            sample_hold_left := (others => '0');
-            sample_hold_right := (others => '0');
-            frame_start_detected := '0';
         elsif rising_edge(clk_audio) then
-            -- Continuously capture input data
-            if audio_in_valid = '1' then
-                audio_buffer_left <= audio_in_left;
-                audio_buffer_right <= audio_in_right;
-            end if;
-            
-            -- Detect start of new I2S frame and hold data for entire frame
-            if sample_request = '1' and frame_start_detected = '0' then
-                -- Capture data at frame start and hold it
-                sample_hold_left := audio_buffer_left;
-                sample_hold_right := audio_buffer_right;
-                frame_start_detected := '1';
-            elsif sample_request = '0' then
-                frame_start_detected := '0';
-            end if;
-            
-            -- Always output the held values (no changes during frame)
-            audio_out_left <= sample_hold_left;
-            audio_out_right <= sample_hold_right;
+            -- Directly pass through input to output (simplest possible)
+            audio_out_left <= audio_in_left;
+            audio_out_right <= audio_in_right;
             audio_out_valid <= '1';
         end if;
     end process;
