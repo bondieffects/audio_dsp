@@ -62,6 +62,22 @@ architecture rtl of audio_dsp_top is
             audio_in_valid : out std_logic
         );
     end component;
+    
+    component audio_dsp_processor is
+        port (
+            clk_audio       : in  std_logic;
+            reset_n         : in  std_logic;
+            audio_in_left   : in  std_logic_vector(15 downto 0);
+            audio_in_right  : in  std_logic_vector(15 downto 0);
+            audio_in_valid  : in  std_logic;
+            audio_out_left  : out std_logic_vector(15 downto 0);
+            audio_out_right : out std_logic_vector(15 downto 0);
+            audio_out_valid : out std_logic;
+            effect_enable   : in  std_logic;
+            effect_select   : in  std_logic_vector(2 downto 0);
+            effect_param    : in  std_logic_vector(7 downto 0)
+        );
+    end component;
 
     -- ========================================================================
     -- INTERNAL SIGNALS
@@ -83,12 +99,17 @@ architecture rtl of audio_dsp_top is
     signal audio_in_valid  : std_logic;
     signal sample_request  : std_logic;
 
-    -- Pass-through signals (input connects to output)
-    signal audio_out_left  : std_logic_vector(15 downto 0);
-    signal audio_out_right : std_logic_vector(15 downto 0);
-    signal audio_out_valid : std_logic;
+    -- DSP processed signals 
+    signal dsp_out_left    : std_logic_vector(15 downto 0);
+    signal dsp_out_right   : std_logic_vector(15 downto 0);
+    signal dsp_out_valid   : std_logic;
 
-    -- Audio buffering signals
+    -- DSP control signals (can be controlled by switches/buttons later)
+    signal effect_enable   : std_logic := '1';  -- Enable effects by default
+    signal effect_select   : std_logic_vector(2 downto 0) := "001";  -- Default to gain
+    signal effect_param    : std_logic_vector(7 downto 0) := x"80";  -- Default parameter
+
+    -- Audio buffering signals (kept for future use)
     signal audio_buffer_left   : std_logic_vector(15 downto 0);
     signal audio_buffer_right  : std_logic_vector(15 downto 0);
     signal buffer_valid        : std_logic;
@@ -114,22 +135,22 @@ begin
         );
 
     -- ========================================================================
-    -- DIRECT PASS-THROUGH (simplest possible approach)
+    -- DSP PROCESSOR INSTANTIATION
     -- ========================================================================
-    -- Direct connection with minimal processing to isolate the issue
-    process(clk_audio, i2s_reset)
-    begin
-        if i2s_reset = '0' then
-            audio_out_left <= (others => '0');
-            audio_out_right <= (others => '0');
-            audio_out_valid <= '1';
-        elsif rising_edge(clk_audio) then
-            -- Directly pass through input to output (simplest possible)
-            audio_out_left <= audio_in_left;
-            audio_out_right <= audio_in_right;
-            audio_out_valid <= '1';
-        end if;
-    end process;
+    u_dsp_processor : audio_dsp_processor
+        port map (
+            clk_audio       => clk_audio,
+            reset_n         => i2s_reset,
+            audio_in_left   => audio_in_left,
+            audio_in_right  => audio_in_right,
+            audio_in_valid  => audio_in_valid,
+            audio_out_left  => dsp_out_left,
+            audio_out_right => dsp_out_right,
+            audio_out_valid => dsp_out_valid,
+            effect_enable   => effect_enable,
+            effect_select   => effect_select,
+            effect_param    => effect_param
+        );
 
     -- ========================================================================
     -- I2S INTERFACE INSTANTIATION
@@ -142,9 +163,9 @@ begin
             i2s_ws          => i2s_ws_int,
             i2s_dac         => i2s_dout,
             i2s_adc         => i2s_din,
-            audio_out_left  => audio_out_left,      -- Processed audio TO codec
-            audio_out_right => audio_out_right,     -- Processed audio TO codec
-            audio_out_valid => audio_out_valid,
+            audio_out_left  => dsp_out_left,       -- DSP processed audio TO codec
+            audio_out_right => dsp_out_right,      -- DSP processed audio TO codec
+            audio_out_valid => dsp_out_valid,
             sample_request  => sample_request,
             audio_in_left   => audio_in_left,       -- Raw audio FROM codec
             audio_in_right  => audio_in_right,      -- Raw audio FROM codec
