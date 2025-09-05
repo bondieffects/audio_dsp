@@ -73,7 +73,7 @@ begin
         wait for 2 ms;  -- Run long enough to see multiple WS cycles
         report "Monitoring complete - check waveforms manually" severity note;
         report "Expected BCLK period: 640ns (1.5625MHz)" severity note;
-        report "Expected WS period: 20480us (48.828kHz)" severity note;
+        report "Expected WS period: 20480ns (48.828kHz)" severity note;
         wait;
     end process;
 
