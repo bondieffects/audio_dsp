@@ -10,26 +10,26 @@ end entity;
 -- 8.4 Test Benches p. 272
 architecture i2s_clocks_TB_arch of i2s_clocks_TB is
 
-    constant MCLK_HALF_PERIOD : time := 41 ns; -- approx half period for 12.288 MHz
+    constant MCLK_HALF_PERIOD : time := 40 ns; -- half period for 12.5MHz clock
 
     -- Component declaration for DUT
     component i2s_clocks
         port (
             -- Inputs
-            i2s_mclk : in std_logic;        -- 12.288MHz master clock from audio_pll
+            i2s_mclk : in std_logic;        -- 12.5MHz master clock from audio_pll
             reset_n : in std_logic;         -- Active low reset
 
             -- Outputs
-            i2s_bclk : out std_logic;       -- 1.536MHz bit clock
-            i2s_ws : out std_logic          -- 48kHz left/right clock
+            i2s_bclk : out std_logic;       -- 1.5625MHz bit clock
+            i2s_ws : out std_logic          -- 48828Hz left/right clock
         );
     end component;
 
     -- Signal declarations
-    signal i2s_mclk_TB : std_logic := '0';  -- 12.288MHz master clock
+    signal i2s_mclk_TB : std_logic := '0';  -- 12.5MHz master clock
     signal reset_n_TB : std_logic := '0';   -- Active low reset
-    signal i2s_bclk_TB : std_logic;         -- 1.536MHz bit clock
-    signal i2s_ws_TB : std_logic;           -- 48kHz left/right clock
+    signal i2s_bclk_TB : std_logic;         -- 1.5625MHz bit clock
+    signal i2s_ws_TB : std_logic;           -- 48.828kHz left/right clock
 
 begin
 
@@ -42,28 +42,24 @@ begin
             i2s_ws => i2s_ws_TB
         );
 
-    -- Stimulus generation to drive the i2s_mclk and reset_n signals
-    STIMULUS: process
+
+    -- Free-running 12.288 MHz master clock from 
+    -- https://www.embeddedrelated.com/showarticle/266/vhdl-tutorial-combining-clocked-and-sequential-logic.php
+    i2s_mclk_proc : process
     begin
-        -- Init signals
         i2s_mclk_TB <= '0';
-        reset_n_TB <= '0';  -- Start with reset active
-        wait for 100 ns;    -- Hold reset for 100 ns
+        wait for MCLK_HALF_PERIOD;
+        i2s_mclk_TB <= '1';
+        wait for MCLK_HALF_PERIOD;
+    end process;
 
-        reset_n_TB <= '1';  -- Release reset
-        wait for 10 ns;     -- Small delay after reset
-
-        -- Generate continuous 12.288MHz clock
-        for i in 0 to 19999 loop  -- Generate 20,000 clock cycles (more than enough)
-            i2s_mclk_TB <= '1';
-            wait for MCLK_HALF_PERIOD;
-            i2s_mclk_TB <= '0';
-            wait for MCLK_HALF_PERIOD;
-        end loop;
-
-        -- End simulation
-        report "Clock generation complete" severity note;
-        wait;
+    -- Reset stimulus process
+    stim_proc : process
+    begin
+        reset_n_TB <= '0';
+        wait for 200 ns;
+        reset_n_TB <= '1';
+        wait;                     -- hold forever
     end process;
 
     -- Simple monitoring process (no automated checks to avoid ModelSim issues)
@@ -74,8 +70,10 @@ begin
         report "Reset released - monitoring started" severity note;
 
         -- Just wait and let the simulation run
-        wait for 1 ms;
+        wait for 2 ms;  -- Run long enough to see multiple WS cycles
         report "Monitoring complete - check waveforms manually" severity note;
+        report "Expected BCLK period: 640ns (1.5625MHz)" severity note;
+        report "Expected WS period: 20480us (48.828kHz)" severity note;
         wait;
     end process;
 
