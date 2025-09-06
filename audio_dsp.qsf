@@ -39,7 +39,7 @@
 
 set_global_assignment -name FAMILY "Cyclone IV E"
 set_global_assignment -name DEVICE EP4CE6E22C8
-set_global_assignment -name TOP_LEVEL_ENTITY i2s_tx
+set_global_assignment -name TOP_LEVEL_ENTITY i2s
 set_global_assignment -name ORIGINAL_QUARTUS_VERSION 20.1.1
 set_global_assignment -name PROJECT_CREATION_TIME_DATE "12:22:03  AUGUST 09, 2025"
 set_global_assignment -name LAST_QUARTUS_VERSION "20.1.1 Lite Edition"
@@ -79,6 +79,8 @@ set_location_assignment PIN_87 -to led[3]
 # Test Points for debugging
 set_location_assignment PIN_50 -to test_point_1
 set_location_assignment PIN_51 -to test_point_2
+set_global_assignment -name VHDL_FILE i2s_TB.vhd
+set_global_assignment -name VHDL_FILE i2s.vhd
 set_global_assignment -name VHDL_FILE i2s_tx_TB.vhd
 set_global_assignment -name VHDL_FILE i2s_tx.vhd
 set_global_assignment -name VHDL_FILE i2s_rx_TB.vhd
