@@ -91,7 +91,7 @@ begin
             reset_n => reset_n,
             audio_left => audio_out_left,
             audio_right => audio_out_right,
-            audio_valid => audio_out_valid,
+            tx_ready => audio_out_valid,
             i2s_sdata => i2s_dac,
             sample_request => sample_request
         );
@@ -107,7 +107,7 @@ begin
             i2s_sdata => i2s_adc,
             audio_left => audio_in_left,
             audio_right => audio_in_right,
-            audio_valid => audio_in_valid
+            rx_ready => audio_in_valid
         );
 
     -- ========================================================================
