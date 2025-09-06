@@ -1,0 +1,90 @@
+# vlib work
+# ** Warning: (vlib-34) Library already exists at "work".
+#  vcom i2s_tx.vhd
+# Model Technology ModelSim - Intel FPGA Edition vcom 2020.1 Compiler 2020.02 Feb 28 2020
+# Start time: 12:13:01 on Sep 06,2025
+# vcom i2s_tx.vhd 
+# -- Loading package STANDARD
+# -- Loading package TEXTIO
+# -- Loading package std_logic_1164
+# -- Loading package NUMERIC_STD
+# -- Compiling entity i2s_tx
+# -- Compiling architecture rtl of i2s_tx
+# End time: 12:13:01 on Sep 06,2025, Elapsed time: 0:00:00
+# Errors: 0, Warnings: 0
+#  vcom i2s_tx_TB.vhd
+# Model Technology ModelSim - Intel FPGA Edition vcom 2020.1 Compiler 2020.02 Feb 28 2020
+# Start time: 12:13:01 on Sep 06,2025
+# vcom i2s_tx_TB.vhd 
+# -- Loading package STANDARD
+# -- Loading package TEXTIO
+# -- Loading package std_logic_1164
+# -- Loading package NUMERIC_STD
+# -- Loading package std_logic_textio
+# -- Compiling entity tb_i2s_tx
+# -- Compiling architecture sim of tb_i2s_tx
+# -- Loading entity i2s_tx
+# End time: 12:13:01 on Sep 06,2025, Elapsed time: 0:00:00
+# Errors: 0, Warnings: 0
+#  vsim -t ns work.tb_i2s_tx
+# vsim -t ns work.tb_i2s_tx 
+# Start time: 12:13:01 on Sep 06,2025
+# Loading std.standard
+# Loading std.textio(body)
+# Loading ieee.std_logic_1164(body)
+# Loading ieee.numeric_std(body)
+# Loading ieee.std_logic_textio(body)
+# Loading work.tb_i2s_tx(sim)
+# Loading work.i2s_tx(rtl)
+#  run -all
+# ** Note: Sample request generated at time 320 ns
+#    Time: 320 ns  Iteration: 3  Instance: /tb_i2s_tx
+# ** Note: Starting RIGHT channel (WS=1)
+#    Time: 32640 ns  Iteration: 1  Instance: /tb_i2s_tx
+# ** Error: Sample 1 LEFT mismatch: got 0 (expected 57005=0xDEAD)
+#    Time: 42240 ns  Iteration: 2  Instance: /tb_i2s_tx
+# ** Note: RIGHT complete: 48879 (expected 48879)
+#    Time: 42241 ns  Iteration: 0  Instance: /tb_i2s_tx
+# ** Note: Starting LEFT channel (WS=0)
+#    Time: 42880 ns  Iteration: 1  Instance: /tb_i2s_tx
+# ** Note: LEFT complete: 57005 (expected 57005)
+#    Time: 52480 ns  Iteration: 1  Instance: /tb_i2s_tx
+# ** Note: Starting RIGHT channel (WS=1)
+#    Time: 53120 ns  Iteration: 1  Instance: /tb_i2s_tx
+# ** Note: RIGHT complete: 48879 (expected 48879)
+#    Time: 62721 ns  Iteration: 0  Instance: /tb_i2s_tx
+# ** Note: Starting LEFT channel (WS=0)
+#    Time: 63360 ns  Iteration: 1  Instance: /tb_i2s_tx
+# ** Note: LEFT complete: 57005 (expected 57005)
+#    Time: 72960 ns  Iteration: 1  Instance: /tb_i2s_tx
+# ** Note: Starting RIGHT channel (WS=1)
+#    Time: 73600 ns  Iteration: 1  Instance: /tb_i2s_tx
+# ** Note: RIGHT complete: 48879 (expected 48879)
+#    Time: 83201 ns  Iteration: 0  Instance: /tb_i2s_tx
+# ** Note: Starting LEFT channel (WS=0)
+#    Time: 83840 ns  Iteration: 1  Instance: /tb_i2s_tx
+# ** Note: LEFT complete: 57005 (expected 57005)
+#    Time: 93440 ns  Iteration: 1  Instance: /tb_i2s_tx
+# ** Note: Starting RIGHT channel (WS=1)
+#    Time: 94080 ns  Iteration: 1  Instance: /tb_i2s_tx
+# ** Note: RIGHT complete: 48879 (expected 48879)
+#    Time: 103681 ns  Iteration: 0  Instance: /tb_i2s_tx
+# ** Note: Starting LEFT channel (WS=0)
+#    Time: 104320 ns  Iteration: 1  Instance: /tb_i2s_tx
+# ** Note: LEFT complete: 57005 (expected 57005)
+#    Time: 113920 ns  Iteration: 1  Instance: /tb_i2s_tx
+# ** Note: Starting RIGHT channel (WS=1)
+#    Time: 114560 ns  Iteration: 1  Instance: /tb_i2s_tx
+# ** Note: Successfully verified 5 transmitted samples
+#    Time: 124160 ns  Iteration: 2  Instance: /tb_i2s_tx
+# ** Note: RIGHT complete: 48879 (expected 48879)
+#    Time: 124161 ns  Iteration: 0  Instance: /tb_i2s_tx
+# ** Note: Starting LEFT channel (WS=0)
+#    Time: 124800 ns  Iteration: 1  Instance: /tb_i2s_tx
+# ** Failure: TB finished
+#    Time: 128 us  Iteration: 0  Process: /tb_i2s_tx/stopper File: i2s_tx_TB.vhd
+# Break in Process stopper at i2s_tx_TB.vhd line 246
+# Stopped at i2s_tx_TB.vhd line 246
+#  quit
+# End time: 12:13:02 on Sep 06,2025, Elapsed time: 0:00:01
+# Errors: 2, Warnings: 0
