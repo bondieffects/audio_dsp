@@ -9,7 +9,7 @@ library IEEE;
 use IEEE.std_logic_1164.all;
 use IEEE.numeric_std.all;
 
-entity i2s_rx is 
+entity i2s_rx is
     port (
         -- Clock and reset
         i2s_bclk : in std_logic;
@@ -22,7 +22,7 @@ entity i2s_rx is
         -- Parallel Audio Output (16-bit samples)
         audio_left  : out std_logic_vector(15 downto 0);
         audio_right : out std_logic_vector(15 downto 0);
-        audio_valid : out std_logic                     -- RX Ready Flag
+        rx_ready : out std_logic                     -- RX Ready Flag
     );
 end entity i2s_rx;
 
@@ -36,11 +36,6 @@ architecture rtl of i2s_rx is
     signal rx_shift_register : std_logic_vector(15 downto 0) := (others => '0');
     signal bit_counter : unsigned(4 downto 0) := "00000";
 
-    -- Word-select Edge Detector
-    signal ws_prev : std_logic := '0';
-    signal ws_falling_edge : std_logic := '0';
-    signal ws_rising_edge : std_logic := '0';
-
     -- Parallel Audio Data Outputs
     signal left_sample : std_logic_vector(15 downto 0) := (others => '0');
     signal right_sample : std_logic_vector(15 downto 0) := (others => '0');
@@ -49,25 +44,7 @@ architecture rtl of i2s_rx is
 begin
 
     -- ============================================================================
-    -- Word-select Edge Detector (FIXED)
-    -- ============================================================================
-    process(i2s_bclk, reset_n)
-    begin
-        if reset_n = '0' then
-            ws_prev <= '0';
-            ws_falling_edge <= '0';
-            ws_rising_edge <= '0';
-        elsif rising_edge(i2s_bclk) then
-            ws_prev <= i2s_ws;
-            -- Detect falling edge (1→0) for left channel start
-            ws_falling_edge <= ws_prev and not i2s_ws;
-            -- Detect rising edge (0→1) for right channel start  
-            ws_rising_edge <= not ws_prev and i2s_ws;
-        end if;
-    end process;
-
-    -- ============================================================================
-    -- I2S RECEIVER STATE MACHINE (FIXED)
+    -- I2S RECEIVER STATE MACHINE
     -- ============================================================================
     -- Receive data on rising edge of BCLK
     -- I2S Format: MSB first, left-justified
@@ -84,72 +61,53 @@ begin
             valid_output <= '0';
 
         elsif rising_edge(i2s_bclk) then
-            -- Default valid_output to '0' unless we complete right channel
-            valid_output <= '0';
+            valid_output <= '0';    -- output '0' unless valid data received
 
             case rx_state is
 
                 when IDLE =>
-                    -- Check for WS transitions to start receiving
-                    if ws_falling_edge = '1' then
-                        -- WS goes low: start receiving left channel
+                    if i2s_ws = '0' then
                         bit_counter <= "00000";
                         rx_shift_register <= (others => '0');
                         rx_state <= LEFT_CHANNEL;
-                    elsif ws_rising_edge = '1' then
-                        -- WS goes high: start receiving right channel
+                    elsif i2s_ws = '1' then
                         bit_counter <= "00000";
                         rx_shift_register <= (others => '0');
                         rx_state <= RIGHT_CHANNEL;
                     end if;
 
                 when LEFT_CHANNEL =>
-                    -- Shift in data bit by bit
-                    rx_shift_register <= rx_shift_register(14 downto 0) & i2s_sdata;
-                    bit_counter <= bit_counter + 1;
+                    if i2s_ws = '0' then
+                        rx_shift_register <= rx_shift_register(14 downto 0) & i2s_sdata;
+                        bit_counter <= bit_counter + 1;
 
-                    -- After 16 bits, save left channel and check for channel change
-                    if bit_counter = "01111" then
-                        left_sample <= rx_shift_register(14 downto 0) & i2s_sdata;
-                        -- Check if we should continue or switch channels
-                        if ws_rising_edge = '1' then
-                            -- WS went high during reception, switch to right
-                            bit_counter <= "00000";
-                            rx_shift_register <= (others => '0');
-                            rx_state <= RIGHT_CHANNEL;
-                        else
+                        -- After 16 bits, save and go idle
+                        if bit_counter = "01111" then                                       -- This is the 16th bit (counter started at 0)
+                            left_sample <= rx_shift_register(14 downto 0) & i2s_sdata;  -- Concatenate 15 shifted bits + current bit = complete 16-bit sample
                             rx_state <= IDLE;
                         end if;
-                    elsif ws_rising_edge = '1' then
-                        -- WS changed mid-reception, switch immediately
-                    bit_counter <= "00000";
+                    else
+                        bit_counter <= "00000";
                         rx_shift_register <= (others => '0');
                         rx_state <= RIGHT_CHANNEL;
                     end if;
 
                 when RIGHT_CHANNEL =>
-                    -- Shift in data bit by bit
-                    rx_shift_register <= rx_shift_register(14 downto 0) & i2s_sdata;
-                    bit_counter <= bit_counter + 1;
+                    if i2s_ws = '1' then
+                        rx_shift_register <= rx_shift_register(14 downto 0) & i2s_sdata;
+                        bit_counter <= bit_counter + 1;
 
-                    -- After 16 bits, save right channel and mark data valid
-                    if bit_counter = "01111" then
-                        right_sample <= rx_shift_register(14 downto 0) & i2s_sdata;
-                        valid_output <= '1';  -- Both channels received
-                        -- Check if we should continue or switch channels
-                        if ws_falling_edge = '1' then
-                            -- WS went low during reception, switch to left
-                            bit_counter <= "00000";
-                            rx_shift_register <= (others => '0');
-                            rx_state <= LEFT_CHANNEL;
-                        else
+                        -- After 16 bits, save and mark valid
+                        if bit_counter = "01111" then                                    -- this is the 16th bit (counter started at 0)
+                            right_sample <= rx_shift_register(14 downto 0) & i2s_sdata;  -- Concatenate 15 shifted bits + current bit = complete 16-bit sample
+                            valid_output <= '1';                                         -- Right channel complete, both samples now available
                             rx_state <= IDLE;
                         end if;
-                    elsif ws_falling_edge = '1' then
-                        -- WS changed mid-reception, switch immediately
-                        bit_counter <= "00000";
-                        rx_shift_register <= (others => '0');
-                        rx_state <= LEFT_CHANNEL;
+                    else
+                        -- next left channel
+                        bit_counter <= "00000";                 -- reset bit counter
+                        rx_shift_register <= (others => '0');   -- reset shift register
+                        rx_state <= LEFT_CHANNEL;               -- switch to left channel
                     end if;
 
             end case;
@@ -161,6 +119,6 @@ begin
     -- ========================================================================
     audio_left <= left_sample;
     audio_right <= right_sample;
-    audio_valid <= valid_output;
+    rx_ready <= valid_output;
 
 end architecture rtl;

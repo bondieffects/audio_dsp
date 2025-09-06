@@ -1,197 +1,139 @@
--- LIBRARIES and PACKAGES for i2s_rx_TB
-library IEEE;
-use IEEE.std_logic_1164.all;
-use IEEE.numeric_std.all;
+-- tb_i2s_rx.vhd
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+use ieee.std_logic_textio.all;
+use std.textio.all;
 
-entity i2s_rx_TB is
-end entity;
+entity tb_i2s_rx is end tb_i2s_rx;
 
--- Test bench for I2S Receiver module
-architecture i2s_rx_TB_arch of i2s_rx_TB is
+architecture sim of tb_i2s_rx is
+  -- ====== I2S params ======
+  constant WORD_BITS        : natural := 16;
+  constant BCLK_PERIOD      : time    := 640 ns;            -- 1.5625MHz
+  constant HALF_BCLK        : time    := BCLK_PERIOD/2;
 
-    -- Clock timing constants
-    constant BCLK_HALF_PERIOD : time := 325 ns;  -- 1.536 MHz BCLK (period = 650ns)
-    constant WS_HALF_PERIOD : time := 10416 ns;  -- 48 kHz WS (period = 20.833us)
+  -- Test words
+  constant LEFT_WORD  : std_logic_vector(15 downto 0) := x"DEAD";
+  constant RIGHT_WORD : std_logic_vector(15 downto 0) := x"BEEF";
 
-    -- Component declaration for DUT
-    component i2s_rx
-        port (
-            -- Clock and reset
-            i2s_bclk : in std_logic;
-            i2s_ws   : in std_logic;
-            reset_n  : in std_logic;
+  -- Delays
+  constant RESET_DELAY : time := 200 ns;
 
-            -- I2S Serial Input (ADC DATA)
-            i2s_sdata : in std_logic;
-
-            -- Parallel Audio Output (16-bit samples)
-            audio_left  : out std_logic_vector(15 downto 0);
-            audio_right : out std_logic_vector(15 downto 0);
-            audio_valid : out std_logic
-        );
-    end component;
-
-    -- Signal declarations
-    signal i2s_bclk_TB : std_logic := '0';
-    signal i2s_ws_TB : std_logic := '0';
-    signal reset_n_TB : std_logic := '0';
-    signal i2s_sdata_TB : std_logic := '0';
-    signal audio_left_TB : std_logic_vector(15 downto 0);
-    signal audio_right_TB : std_logic_vector(15 downto 0);
-    signal audio_valid_TB : std_logic;
-
-    -- Test data
-    constant TEST_LEFT_DATA : std_logic_vector(15 downto 0) := "1010101010101010";   -- 0xAAAA
-    constant TEST_RIGHT_DATA : std_logic_vector(15 downto 0) := "0101010101010101";  -- 0x5555
+  -- Signal declarations for I2S interface
+  signal i2s_bclk   : std_logic := '0';
+  signal i2s_ws     : std_logic := '0';
+  signal reset_n    : std_logic := '0';
+  signal i2s_sdata  : std_logic := '0';
+  signal audio_left : std_logic_vector(15 downto 0);
+  signal audio_right: std_logic_vector(15 downto 0);
+  signal rx_ready: std_logic;
 
 begin
+  -- DUT
+  uut: entity work.i2s_rx
+    port map (
+      i2s_bclk   => i2s_bclk,
+      i2s_ws     => i2s_ws,
+      reset_n    => reset_n,
+      i2s_sdata  => i2s_sdata,
+      audio_left => audio_left,
+      audio_right=> audio_right,
+      rx_ready=> rx_ready
+    );
 
-    -- DUT instantiation
-    DUT1: i2s_rx
-        port map (
-            i2s_bclk => i2s_bclk_TB,
-            i2s_ws => i2s_ws_TB,
-            reset_n => reset_n_TB,
-            i2s_sdata => i2s_sdata_TB,
-            audio_left => audio_left_TB,
-            audio_right => audio_right_TB,
-            audio_valid => audio_valid_TB
-        );
-
-    -- BCLK Generation Process
-    BCLK_GEN: process
+    -- Free-running 1.5625 MHz bit clock 
+    i2s_bclk_proc : process
     begin
-        -- Wait for reset release
-        wait until reset_n_TB = '1';
-        wait for 50 ns;  -- Small delay after reset
-        
-        -- Generate continuous BCLK
-        for i in 0 to 10000 loop  -- Generate enough clocks for multiple samples
-            i2s_bclk_TB <= '1';
-            wait for BCLK_HALF_PERIOD;
-            i2s_bclk_TB <= '0';
-            wait for BCLK_HALF_PERIOD;
+        loop
+            i2s_bclk <= '0';
+            wait for HALF_BCLK;
+            i2s_bclk <= '1';
+            wait for HALF_BCLK;
         end loop;
-        
-        report "BCLK generation complete" severity note;
-        wait;
     end process;
 
-    -- Word Select (WS) Generation Process
-    WS_GEN: process
+    -- Reset stimulus process
+    reset_proc : process
     begin
-        -- Wait for reset release
-        wait until reset_n_TB = '1';
-        wait for 100 ns;  -- Small delay after reset
-        
-        -- Generate WS signal (48kHz)
-        for i in 0 to 20 loop  -- Generate multiple WS cycles
-            -- Left channel (WS = '0')
-            i2s_ws_TB <= '0';
-            wait for WS_HALF_PERIOD;
-            
-            -- Right channel (WS = '1')
-            i2s_ws_TB <= '1';
-            wait for WS_HALF_PERIOD;
-        end loop;
-        
-        report "WS generation complete" severity note;
-        wait;
+        reset_n <= '0';
+        wait for RESET_DELAY;
+        reset_n <= '1';
+        wait;                     -- hold forever
     end process;
 
-    -- I2S Serial Data Generation Process
-    SDATA_GEN: process
-        variable bit_index : integer;
-        variable current_data : std_logic_vector(15 downto 0);
+    -- Philips I2S Protocol:
+    --      WS (Word Select): 0 = Left channel, 1 = Right channel
+    --      BCLK (Bit Clock): Data changes on falling edge, sampled on rising edge
+    --      Timing: Data transmission starts one BCLK period after WS change (I2S protocol requirement)
+    --      Data Format: MSB first, 16 bits per channel
+    i2s_stimulus : process
     begin
         -- Initialize
-        i2s_sdata_TB <= '0';
-        
-        -- Wait for reset release and clocks to start
-        wait until reset_n_TB = '1';
-        wait for 200 ns;
-        
-        -- Generate test data for multiple samples
-        for sample in 0 to 10 loop
-            -- Wait for WS falling edge (start of left channel)
-            wait until falling_edge(i2s_ws_TB);
-            wait until rising_edge(i2s_bclk_TB);  -- Sync to BCLK
-            
-            -- Send left channel data (MSB first)
-            current_data := TEST_LEFT_DATA;
-            for bit_index in 15 downto 0 loop
-                i2s_sdata_TB <= current_data(bit_index);
-                wait until rising_edge(i2s_bclk_TB);
-            end loop;
-            
-            -- Wait for WS rising edge (start of right channel)
-            wait until rising_edge(i2s_ws_TB);
-            wait until rising_edge(i2s_bclk_TB);  -- Sync to BCLK
-            
-            -- Send right channel data (MSB first)
-            current_data := TEST_RIGHT_DATA;
-            for bit_index in 15 downto 0 loop
-                i2s_sdata_TB <= current_data(bit_index);
-                wait until rising_edge(i2s_bclk_TB);
-            end loop;
-        end loop;
-        
-        report "Serial data generation complete" severity note;
-        wait;
-    end process;
+        i2s_ws <= '0';      -- Start with left channel
+        i2s_sdata <= '0';
 
-    -- Reset and Stimulus Control Process
-    STIMULUS: process
-    begin
-        -- Initialize signals
-        reset_n_TB <= '0';
-        wait for 200 ns;    -- Hold reset for 200 ns
-
-        reset_n_TB <= '1';  -- Release reset
-        report "Reset released - test starting" severity note;
-
-        -- Let the test run
-        wait for 5 ms;      -- Run for 5ms to capture multiple samples
-        
-        report "Test stimulus complete" severity note;
-        wait;
-    end process;
-
-    -- Output Monitoring Process
-    MONITOR: process
-        variable left_received : std_logic_vector(15 downto 0);
-        variable right_received : std_logic_vector(15 downto 0);
-        variable sample_count : integer := 0;
-    begin
         -- Wait for reset release
-        wait until reset_n_TB = '1';
-        report "Reset released - monitoring started" severity note;
+        wait until reset_n = '1';
+        wait for RESET_DELAY;
 
-        -- Monitor audio_valid and check received data
-        while sample_count < 5 loop  -- Monitor first 5 complete samples
-            wait until rising_edge(audio_valid_TB);
-            
-            left_received := audio_left_TB;
-            right_received := audio_right_TB;
-            sample_count := sample_count + 1;
-            
-            -- Check if received data matches expected
-            if left_received = TEST_LEFT_DATA and right_received = TEST_RIGHT_DATA then
-                report "Sample " & integer'image(sample_count) & " PASS - Left: 0x" & 
-                       to_hstring(left_received) & ", Right: 0x" & to_hstring(right_received) 
-                       severity note;
-            else
-                report "Sample " & integer'image(sample_count) & " FAIL - Expected Left: 0x" & 
-                       to_hstring(TEST_LEFT_DATA) & ", Got: 0x" & to_hstring(left_received) & 
-                       ", Expected Right: 0x" & to_hstring(TEST_RIGHT_DATA) & 
-                       ", Got: 0x" & to_hstring(right_received) severity error;
-            end if;
-            
-            wait for 100 ns;  -- Small delay between checks
+        -- Align with BCLK falling edge
+        wait until falling_edge(i2s_bclk);
+
+        loop
+            -- LEFT CHANNEL
+            i2s_ws <= '0';
+            wait until falling_edge(i2s_bclk);     -- One BCLK delay
+
+            for i in 15 downto 0 loop               -- Send 16 bits MSB first
+                i2s_sdata <= LEFT_WORD(i);
+                wait until falling_edge(i2s_bclk);
+            end loop;
+
+            -- RIGHT CHANNEL
+            i2s_ws <= '1';
+            wait until falling_edge(i2s_bclk);     -- One BCLK delay
+
+            for i in 15 downto 0 loop               -- Send 16 bits MSB first
+                i2s_sdata <= RIGHT_WORD(i);
+                wait until falling_edge(i2s_bclk);
+            end loop;
         end loop;
-        
-        report "Monitoring complete - check waveforms for detailed analysis" severity note;
-        wait;
     end process;
 
-end architecture i2s_rx_TB_arch;
+  -- Check for valid data
+  -- rx_ready pulses high when RX completes both left and right channels
+  -- Verify that the captured parallel words match the stimulus.
+  -- from vhdl_testbenches.pdf, p. 14
+  checker : process
+    variable sample_count : integer := 0;
+  begin
+    loop
+      wait until rising_edge(rx_ready); -- your RX pulses this after RIGHT completes
+      sample_count := sample_count + 1;
+
+      assert audio_left  = LEFT_WORD
+        report "Sample " & integer'image(sample_count) & " LEFT mismatch: got " & 
+               integer'image(to_integer(unsigned(audio_left))) & " (expected 57005=0xDEAD)"
+        severity error;
+      assert audio_right = RIGHT_WORD
+        report "Sample " & integer'image(sample_count) & " RIGHT mismatch: got " &
+               integer'image(to_integer(unsigned(audio_right))) & " (expected 48879=0xBEEF)"
+        severity error;
+
+      if sample_count >= 5 then
+        report "Successfully verified " & integer'image(sample_count) & " samples" severity note;
+        exit; -- Stop checking after 5 samples
+      end if;
+    end loop;
+    wait; -- Process ends cleanly
+  end process;
+
+  -- End-of-sim timeout, does not stop continuous processes (clocks) but does stop sequential processes
+  stopper : process
+  begin
+    wait for 200 * BCLK_PERIOD;
+    report "TB finished" severity failure;  -- not actually a failure, but immediately stops sim
+                                            -- from vhdl_testbenches.pdf, p. 14
+  end process;
+end architecture;

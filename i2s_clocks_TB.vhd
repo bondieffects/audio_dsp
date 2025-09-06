@@ -10,7 +10,9 @@ end entity;
 -- 8.4 Test Benches p. 272
 architecture i2s_clocks_TB_arch of i2s_clocks_TB is
 
-    constant MCLK_HALF_PERIOD : time := 40 ns; -- half period for 12.5MHz clock
+    constant MCLK_HALF_PERIOD : time := 40 ns;  -- half period for 12.5MHz clock
+    constant BCLK_PERIOD : time := 640 ns;      -- 1.5625MHz bit clock period
+    constant WS_PERIOD : time := 20480 ns;      -- 48.828kHz left/right clock period
 
     -- Component declaration for DUT
     component i2s_clocks
@@ -43,7 +45,7 @@ begin
         );
 
 
-    -- Free-running 12.288 MHz master clock from 
+    -- Free-running 12.5 MHz master clock from 
     -- https://www.embeddedrelated.com/showarticle/266/vhdl-tutorial-combining-clocked-and-sequential-logic.php
     i2s_mclk_proc : process
     begin
@@ -70,11 +72,12 @@ begin
         report "Reset released - monitoring started" severity note;
 
         -- Just wait and let the simulation run
-        wait for 2 ms;  -- Run long enough to see multiple WS cycles
+        wait for 3 * WS_PERIOD;  -- Run long enough to see multiple WS cycles
         report "Monitoring complete - check waveforms manually" severity note;
         report "Expected BCLK period: 640ns (1.5625MHz)" severity note;
         report "Expected WS period: 20480ns (48.828kHz)" severity note;
-        wait;
+        
+        report "TB finished" severity failure;  -- Stop simulation cleanly
     end process;
 
 end architecture i2s_clocks_TB_arch;
