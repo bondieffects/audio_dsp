@@ -71,6 +71,7 @@ begin
 
     -- Word Select (WS) generation process
     -- Philips I2S Protocol Standard:
+    -- UM11732 (§3, Fig.1): “the device generating SCK and WS is the controller.”
     --      WS (Word Select): 0 = Left channel, 1 = Right channel
     --      WS changes on falling edge of BCLK
     --      Data transmission starts one BCLK period after WS change
@@ -85,6 +86,7 @@ begin
         wait for RESET_DELAY;
 
         -- Align with BCLK falling edge
+        -- UM11732 (§3.2): “WS = 0; left, WS = 1; right. WS changes one clock period before the MSB is transmitted.”
         wait until falling_edge(i2s_bclk);
 
         loop
@@ -110,6 +112,8 @@ begin
         wait until reset_n = '1';
         wait for RESET_DELAY;
 
+        -- UM11732 §3.3:
+        -- “Serial data is transmitted in two’s complement with the MSB first.”
         -- Single test pattern: Constant values
         audio_left <= x"DEAD";
         audio_right <= x"BEEF";
@@ -132,18 +136,21 @@ begin
         -- Initialize signals
         received_left <= (others => '0');
         received_right <= (others => '0');
-        
+
         -- Wait for reset release
         wait until reset_n = '1';
         wait for RESET_DELAY;
-        
+
         -- Wait for several WS periods to let things settle
         wait for 50 * BCLK_PERIOD;
-        
+
         -- Start checking - sync with falling edges like the transmitter
-        loop            
+        -- UM11732 §3.3:
+        -- “Data is valid on the rising edge of SCK; the transmitter changes the data on the falling edge.”
+        loop
+
             wait until falling_edge(i2s_bclk);
-            
+
             case channel_state is
                 when "IDLE" =>
                     if i2s_ws = '0' then
@@ -161,13 +168,13 @@ begin
                         right_shift_reg := right_shift_reg(14 downto 0) & i2s_sdata;  -- Standard shift register
                         report "Starting RIGHT channel (WS=1)" severity note;
                     end if;
-                    
+
                 when "LEFT" =>
                     if bit_count < 16 then
                         -- Continue collecting bits - standard MSB-first shift register
                         left_shift_reg := left_shift_reg(14 downto 0) & i2s_sdata;
                         bit_count := bit_count + 1;
-                        
+
                         if bit_count = 16 then
                             received_left <= left_shift_reg;
                             channel_state := "IDLE";
@@ -177,13 +184,13 @@ begin
                         -- Should not happen, but reset if we get here
                         channel_state := "IDLE";
                     end if;
-                    
+
                 when "RGHT" =>
                     if bit_count < 16 then
                         -- Continue collecting bits - standard MSB-first shift register
                         right_shift_reg := right_shift_reg(14 downto 0) & i2s_sdata;
                         bit_count := bit_count + 1;
-                        
+
                         if bit_count = 16 then
                             received_right <= right_shift_reg;
                             frame_complete <= '1';
@@ -196,7 +203,7 @@ begin
                         -- Should not happen, but reset if we get here
                         channel_state := "IDLE";
                     end if;
-                    
+
                 when others =>
                     channel_state := "IDLE";
             end case;
