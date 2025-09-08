@@ -1,3 +1,4 @@
+# Quartus II generated files
 .qsys_edit/
 db/
 greybox_tmp/
@@ -5,5 +6,35 @@ incremental_db/
 output_files/
 simulation/
 work/
+
+# Quartus II workspace and temporary files
+*.qws
+transcript
+
+# ModelSim/simulation files
+*.wlf
+*.vstf
+*.vcd
+modelsim.ini
+
+# Generated reports that can be recreated
+*_nativelink_simulation.rpt
+
+# Temporary build files
+*.bak
+*.tmp
+*.log
+
+# IDE temporary files
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS generated files
+Thumbs.db
+.DS_Store
+*.tmp
+*.temp
 
 
