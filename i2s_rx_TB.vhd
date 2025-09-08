@@ -1,15 +1,15 @@
--- tb_i2s_rx.vhd
+-- i2s_rx_TB.vhd
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 use ieee.std_logic_textio.all;
 use std.textio.all;
 
-entity tb_i2s_rx is end tb_i2s_rx;
+entity i2s_rx_TB is end i2s_rx_TB;
 
-architecture sim of tb_i2s_rx is
+architecture sim of i2s_rx_TB is
   -- ====== I2S params ======
-  constant WORD_BITS        : natural := 16;
+  constant WORD_BITS        : natural := 16;                -- 16 bits per audio word
   constant BCLK_PERIOD      : time    := 640 ns;            -- 1.5625MHz
   constant HALF_BCLK        : time    := BCLK_PERIOD/2;
 
@@ -42,7 +42,7 @@ begin
       rx_ready=> rx_ready
     );
 
-    -- Free-running 1.5625 MHz bit clock 
+    -- Free-running 1.5625 MHz bit clock
     i2s_bclk_proc : process
     begin
         loop
@@ -70,21 +70,30 @@ begin
     i2s_stimulus : process
     begin
         -- Initialize
-        i2s_ws <= '0';      -- Start with left channel
+        i2s_ws <= '0';      -- Initialise to left channel
         i2s_sdata <= '0';
 
-        -- Wait for reset release
+        -- Wait for reset
         wait until reset_n = '1';
         wait for RESET_DELAY;
 
-        -- Align with BCLK falling edge
+        -- -- UM11732 §6.1 “Data format”:
+        -- “Data is valid on the rising edge of SCK; the transmitter changes the data on the falling edge.”
         wait until falling_edge(i2s_bclk);
 
         loop
+          -- UM11732 §5.3 “Word select line WS”:
+          -- “WS is low during a left-channel word and high during a right-channel word.”
+
             -- LEFT CHANNEL
             i2s_ws <= '0';
+
+            -- UM11732 §6.1 “Data format”:
+            -- “WS changes one clock period before the MSB is transmitted.”
             wait until falling_edge(i2s_bclk);     -- One BCLK delay
 
+            -- UM11732 §6.1 “Data format”:
+            -- “The MSB of the left word is transmitted one clock period after WS goes low.”
             for i in 15 downto 0 loop               -- Send 16 bits MSB first
                 i2s_sdata <= LEFT_WORD(i);
                 wait until falling_edge(i2s_bclk);

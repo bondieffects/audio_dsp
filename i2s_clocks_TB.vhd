@@ -10,9 +10,13 @@ end entity;
 -- 8.4 Test Benches p. 272
 architecture i2s_clocks_TB_arch of i2s_clocks_TB is
 
+    -- From I2S Specification:
+    -- The system master clock (MCLK) is typically 256 × fS.
+    -- The bit clock (SCK) is typically 64 × fS in systems with two
+    -- 32-bit words per audio sample. Other word lengths scale SCK accordingly.
     constant MCLK_HALF_PERIOD : time := 40 ns;  -- half period for 12.5MHz clock
-    constant BCLK_PERIOD : time := 640 ns;      -- 1.5625MHz bit clock period
-    constant WS_PERIOD : time := 20480 ns;      -- 48.828kHz left/right clock period
+    constant WS_PERIOD : time := 20480 ns;      -- 12.5MHz / 256 = 48.828kHz
+    constant BCLK_PERIOD : time := 640 ns;      -- 48.828kHz * [64/2] = 1.5625MHz
 
     -- Component declaration for DUT
     component i2s_clocks
@@ -23,7 +27,7 @@ architecture i2s_clocks_TB_arch of i2s_clocks_TB is
 
             -- Outputs
             i2s_bclk : out std_logic;       -- 1.5625MHz bit clock
-            i2s_ws : out std_logic          -- 48828Hz left/right clock
+            i2s_ws : out std_logic          -- 48.828kHz word select clock
         );
     end component;
 
@@ -31,7 +35,7 @@ architecture i2s_clocks_TB_arch of i2s_clocks_TB is
     signal i2s_mclk_TB : std_logic := '0';  -- 12.5MHz master clock
     signal reset_n_TB : std_logic := '0';   -- Active low reset
     signal i2s_bclk_TB : std_logic;         -- 1.5625MHz bit clock
-    signal i2s_ws_TB : std_logic;           -- 48.828kHz left/right clock
+    signal i2s_ws_TB : std_logic;           -- 48.828kHz word select clock
 
 begin
 
@@ -45,7 +49,7 @@ begin
         );
 
 
-    -- Free-running 12.5 MHz master clock from 
+    -- Free-running 12.5 MHz master clock from
     -- https://www.embeddedrelated.com/showarticle/266/vhdl-tutorial-combining-clocked-and-sequential-logic.php
     i2s_mclk_proc : process
     begin

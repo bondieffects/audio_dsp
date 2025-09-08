@@ -61,11 +61,12 @@ begin
             valid_output <= '0';
 
         elsif rising_edge(i2s_bclk) then
-            valid_output <= '0';    -- output '0' unless valid data received
+            -- Don't clear valid_output every cycle - only when starting new frame
 
             case rx_state is
 
                 when IDLE =>
+                    valid_output <= '0';    -- Clear valid when idle
                     if i2s_ws = '0' then
                         bit_counter <= "00000";
                         rx_shift_register <= (others => '0');
@@ -82,11 +83,12 @@ begin
                         bit_counter <= bit_counter + 1;
 
                         -- After 16 bits, save and go idle
-                        if bit_counter = "01111" then                                       -- This is the 16th bit (counter started at 0)
+                        if bit_counter = "01110" then    -- Complete on 15th bit (16 total bits since counter starts at 0)                                   
                             left_sample <= rx_shift_register(14 downto 0) & i2s_sdata;  -- Concatenate 15 shifted bits + current bit = complete 16-bit sample
                             rx_state <= IDLE;
                         end if;
                     else
+                        -- WS changed to right channel - start right channel reception
                         bit_counter <= "00000";
                         rx_shift_register <= (others => '0');
                         rx_state <= RIGHT_CHANNEL;
@@ -98,13 +100,13 @@ begin
                         bit_counter <= bit_counter + 1;
 
                         -- After 16 bits, save and mark valid
-                        if bit_counter = "01111" then                                    -- this is the 16th bit (counter started at 0)
+                        if bit_counter = "01110" then    -- Complete on 15th bit (16 total bits since counter starts at 0)                               
                             right_sample <= rx_shift_register(14 downto 0) & i2s_sdata;  -- Concatenate 15 shifted bits + current bit = complete 16-bit sample
                             valid_output <= '1';                                         -- Right channel complete, both samples now available
                             rx_state <= IDLE;
                         end if;
                     else
-                        -- next left channel
+                        -- WS changed to left channel - start left channel reception
                         bit_counter <= "00000";                 -- reset bit counter
                         rx_shift_register <= (others => '0');   -- reset shift register
                         rx_state <= LEFT_CHANNEL;               -- switch to left channel
