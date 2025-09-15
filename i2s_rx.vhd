@@ -22,19 +22,20 @@ entity i2s_rx is
         -- Parallel Audio Output (16-bit samples)
         audio_left  : out std_logic_vector(15 downto 0);
         audio_right : out std_logic_vector(15 downto 0);
-        rx_ready : out std_logic                     -- RX Ready Flag
+        rx_ready : out std_logic
     );
 end entity i2s_rx;
 
 architecture rtl of i2s_rx is
 
-    -- Create a state machine for I2S data in
+    -- State machine for I2S RX
     type i2s_rx_state_t is (IDLE, LEFT_CHANNEL, RIGHT_CHANNEL);
     signal rx_state : i2s_rx_state_t := IDLE;
 
-    -- Create a shift register for serial reception
+    -- Shift register for serial reception
     signal rx_shift_register : std_logic_vector(15 downto 0) := (others => '0');
     signal bit_counter : unsigned(4 downto 0) := "00000";
+    signal sync_ready : std_logic := '0';  -- '1' means ready to capture data, '0' means waiting for sync
 
     -- Parallel Audio Data Outputs
     signal left_sample : std_logic_vector(15 downto 0) := (others => '0');
@@ -46,7 +47,7 @@ begin
     -- ============================================================================
     -- I2S RECEIVER STATE MACHINE
     -- ============================================================================
-    -- Receive data on rising edge of BCLK
+    -- "Serial data... is latched... on the rising edge of [BCLK]."
     -- I2S Format: MSB first, left-justified
     -- WS = 0: Left channel, WS = 1: Right channel
 
@@ -59,57 +60,66 @@ begin
             left_sample <= (others => '0');
             right_sample <= (others => '0');
             valid_output <= '0';
+            sync_ready <= '0';
 
         elsif rising_edge(i2s_bclk) then
-            -- Don't clear valid_output every cycle - only when starting new frame
+            valid_output <= '0';
 
             case rx_state is
 
                 when IDLE =>
-                    valid_output <= '0';    -- Clear valid when idle
                     if i2s_ws = '0' then
                         bit_counter <= "00000";
                         rx_shift_register <= (others => '0');
+                        sync_ready <= '0';
                         rx_state <= LEFT_CHANNEL;
-                    elsif i2s_ws = '1' then
-                        bit_counter <= "00000";
-                        rx_shift_register <= (others => '0');
-                        rx_state <= RIGHT_CHANNEL;
                     end if;
 
                 when LEFT_CHANNEL =>
                     if i2s_ws = '0' then
-                        rx_shift_register <= rx_shift_register(14 downto 0) & i2s_sdata;
-                        bit_counter <= bit_counter + 1;
+                        if sync_ready = '0' then                                                -- wait for sync
+                            sync_ready <= '1';
+                        else
+                            rx_shift_register <= rx_shift_register(14 downto 0) & i2s_sdata;    -- Shift new bits left, MSB enters at bit 0 and gets shifted to bit 15
+                            bit_counter <= bit_counter + 1;                                     -- increment bit counter
 
-                        -- After 16 bits, save and go idle
-                        if bit_counter = "01110" then    -- Complete on 15th bit (16 total bits since counter starts at 0)                                   
-                            left_sample <= rx_shift_register(14 downto 0) & i2s_sdata;  -- Concatenate 15 shifted bits + current bit = complete 16-bit sample
-                            rx_state <= IDLE;
+                            if bit_counter = "01111" then                                       -- After 16 bits
+                                left_sample <= rx_shift_register(14 downto 0) & i2s_sdata;      -- Combine 15 buffered bits with final bit to form complete sample
+                                bit_counter <= "00000";                                         -- reset bit counter
+                                rx_shift_register <= (others => '0');                           -- clear shift register
+                                sync_ready <= '0';                                              -- reset sync_ready
+                                rx_state <= RIGHT_CHANNEL;                                      -- switch to right channel
+                            end if;
                         end if;
                     else
-                        -- WS changed to right channel - start right channel reception
-                        bit_counter <= "00000";
-                        rx_shift_register <= (others => '0');
-                        rx_state <= RIGHT_CHANNEL;
+                        bit_counter <= "00000";                                                 -- WS changed to right channel
+                        rx_shift_register <= (others => '0');                                   -- clear shift register
+                        sync_ready <= '0';                                                      -- reset sync_ready
+                        rx_state <= RIGHT_CHANNEL;                                              -- switch to right channel
                     end if;
 
                 when RIGHT_CHANNEL =>
                     if i2s_ws = '1' then
-                        rx_shift_register <= rx_shift_register(14 downto 0) & i2s_sdata;
-                        bit_counter <= bit_counter + 1;
+                        if sync_ready = '0' then                                                -- wait for sync
+                            sync_ready <= '1';
+                        else
+                            rx_shift_register <= rx_shift_register(14 downto 0) & i2s_sdata;    -- Shift new bits left, MSB enters at bit 0 and gets shifted to bit 15
+                            bit_counter <= bit_counter + 1;                                     -- increment bit counter
 
-                        -- After 16 bits, save and mark valid
-                        if bit_counter = "01110" then    -- Complete on 15th bit (16 total bits since counter starts at 0)                               
-                            right_sample <= rx_shift_register(14 downto 0) & i2s_sdata;  -- Concatenate 15 shifted bits + current bit = complete 16-bit sample
-                            valid_output <= '1';                                         -- Right channel complete, both samples now available
-                            rx_state <= IDLE;
+                            if bit_counter = "01111" then                                       -- After 16 data bits
+                                right_sample <= rx_shift_register(14 downto 0) & i2s_sdata;     -- Combine 15 buffered bits with final bit to form complete sample
+                                valid_output <= '1';                                            -- left and right samples ready
+                                bit_counter <= "00000";                                         -- reset bit counter
+                                rx_shift_register <= (others => '0');                           -- clear shift register
+                                sync_ready <= '0';                                              -- reset sync_ready
+                                rx_state <= LEFT_CHANNEL;                                       -- switch back to left channel
+                            end if;
                         end if;
                     else
-                        -- WS changed to left channel - start left channel reception
-                        bit_counter <= "00000";                 -- reset bit counter
-                        rx_shift_register <= (others => '0');   -- reset shift register
-                        rx_state <= LEFT_CHANNEL;               -- switch to left channel
+                        bit_counter <= "00000";                                                 -- WS changed to left channel
+                        rx_shift_register <= (others => '0');                                   -- clear shift register
+                        sync_ready <= '0';                                                      -- reset sync_ready
+                        rx_state <= LEFT_CHANNEL;                                               -- switch to left channel
                     end if;
 
             end case;
