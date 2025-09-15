@@ -80,11 +80,13 @@ begin
                         if sync_ready = '0' then                                                -- wait for sync
                             sync_ready <= '1';
                         else
-                            rx_shift_register <= rx_shift_register(14 downto 0) & i2s_sdata;    -- Shift new bits left, MSB enters at bit 0 and gets shifted to bit 15
+                            rx_shift_register <= rx_shift_register(14 downto 0) & i2s_sdata;    -- Shift new bits left, MSB enters at bit 0
+                                                                                                -- and gets shifted to bit 15
                             bit_counter <= bit_counter + 1;                                     -- increment bit counter
 
                             if bit_counter = "01111" then                                       -- After 16 bits
-                                left_sample <= rx_shift_register(14 downto 0) & i2s_sdata;      -- Combine 15 buffered bits with final bit to form complete sample
+                                left_sample <= rx_shift_register(14 downto 0) & i2s_sdata;      -- Combine 15 buffered bits with final bit
+                                                                                                -- to form complete sample
                                 bit_counter <= "00000";                                         -- reset bit counter
                                 rx_shift_register <= (others => '0');                           -- clear shift register
                                 sync_ready <= '0';                                              -- reset sync_ready
