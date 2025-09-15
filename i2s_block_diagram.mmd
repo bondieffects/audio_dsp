@@ -1,0 +1,64 @@
+flowchart TB
+    %% I2S Interface Block Diagram
+    
+    subgraph inputs ["🔌 External Inputs"]
+        MCLK[Master Clock]
+        RST[Reset]
+        ADC_IN[ADC Data In]
+    end
+    
+    subgraph outputs ["📡 External Outputs"]
+        DAC_OUT[DAC Data Out]
+        REQ[Sample Request]
+    end
+    
+    subgraph clocks ["⏰ Clock Generator i2s_clocks"]
+        BCLK[Bit Clock]
+        WS[Word Select]
+    end
+    
+    subgraph tx ["📤 I2S Transmitter i2s_tx"]
+        TX_LEFT[Left Audio Out]
+        TX_RIGHT[Right Audio Out]
+        TX_VALID[Audio Out Valid]
+    end
+    
+    subgraph rx ["📥 I2S Receiver i2s_rx"]
+        RX_LEFT[Left Audio In]
+        RX_RIGHT[Right Audio In] 
+        RX_VALID[Audio In Valid]
+    end
+    
+    %% Connections
+    MCLK --> clocks
+    RST --> clocks
+    RST --> tx
+    RST --> rx
+    
+    clocks --> tx
+    clocks --> rx
+    
+    TX_LEFT --> tx
+    TX_RIGHT --> tx
+    TX_VALID --> tx
+    
+    tx --> DAC_OUT
+    tx --> REQ
+    
+    ADC_IN --> rx
+    rx --> RX_LEFT
+    rx --> RX_RIGHT
+    rx --> RX_VALID
+
+    %% Styling - Add colors and icons
+    classDef inputStyle fill:#e1f5fe,stroke:#01579b,stroke-width:2px,color:#000
+    classDef outputStyle fill:#f3e5f5,stroke:#4a148c,stroke-width:2px,color:#000
+    classDef clockStyle fill:#fff3e0,stroke:#e65100,stroke-width:2px,color:#000
+    classDef txStyle fill:#e8f5e8,stroke:#1b5e20,stroke-width:2px,color:#000
+    classDef rxStyle fill:#ffebee,stroke:#c62828,stroke-width:2px,color:#000
+    
+    class MCLK,RST,ADC_IN inputStyle
+    class DAC_OUT,REQ outputStyle
+    class BCLK,WS clockStyle
+    class TX_LEFT,TX_RIGHT,TX_VALID txStyle
+    class RX_LEFT,RX_RIGHT,RX_VALID rxStyle

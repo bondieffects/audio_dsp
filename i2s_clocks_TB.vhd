@@ -14,28 +14,28 @@ architecture i2s_clocks_TB_arch of i2s_clocks_TB is
     -- The system master clock (MCLK) is typically 256 × fS.
     -- The bit clock (SCK) is typically 64 × fS in systems with two
     -- 32-bit words per audio sample. Other word lengths scale SCK accordingly.
-    constant MCLK_HALF_PERIOD : time := 40 ns;  -- half period for 12.5MHz clock
-    constant WS_PERIOD : time := 20480 ns;      -- 12.5MHz / 256 = 48.828kHz
-    constant BCLK_PERIOD : time := 640 ns;      -- 48.828kHz * [64/2] = 1.5625MHz
+    constant MCLK_HALF_PERIOD : time := 40.69 ns; -- half period for 12.288MHz clock (1/(12.288MHz*2))
+    constant WS_PERIOD : time := 20833.33 ns;     -- 12.288MHz / 256 = 48kHz  
+    constant BCLK_PERIOD : time := 651.04 ns;     -- 12.288MHz / 8 = 1.536MHz
 
     -- Component declaration for DUT
     component i2s_clocks
         port (
             -- Inputs
-            i2s_mclk : in std_logic;        -- 12.5MHz master clock from audio_pll
+            i2s_mclk : in std_logic;        -- 12.288MHz master clock from audio_pll
             reset_n : in std_logic;         -- Active low reset
 
             -- Outputs
-            i2s_bclk : out std_logic;       -- 1.5625MHz bit clock
-            i2s_ws : out std_logic          -- 48.828kHz word select clock
+            i2s_bclk : out std_logic;       -- 1.536MHz bit clock
+            i2s_ws : out std_logic          -- 48kHz word select clock
         );
     end component;
 
     -- Signal declarations
-    signal i2s_mclk_TB : std_logic := '0';  -- 12.5MHz master clock
+    signal i2s_mclk_TB : std_logic := '0';  -- 12.288MHz master clock
     signal reset_n_TB : std_logic := '0';   -- Active low reset
-    signal i2s_bclk_TB : std_logic;         -- 1.5625MHz bit clock
-    signal i2s_ws_TB : std_logic;           -- 48.828kHz word select clock
+    signal i2s_bclk_TB : std_logic;         -- 1.536MHz bit clock
+    signal i2s_ws_TB : std_logic;           -- 48kHz word select clock
 
 begin
 
@@ -49,7 +49,7 @@ begin
         );
 
 
-    -- Free-running 12.5 MHz master clock from
+    -- Free-running 12.288 MHz master clock from
     -- https://www.embeddedrelated.com/showarticle/266/vhdl-tutorial-combining-clocked-and-sequential-logic.php
     i2s_mclk_proc : process
     begin
@@ -78,8 +78,8 @@ begin
         -- Just wait and let the simulation run
         wait for 3 * WS_PERIOD;  -- Run long enough to see multiple WS cycles
         report "Monitoring complete - check waveforms manually" severity note;
-        report "Expected BCLK period: 640ns (1.5625MHz)" severity note;
-        report "Expected WS period: 20480ns (48.828kHz)" severity note;
+        report "Expected BCLK period: 651.04ns (1.536MHz)" severity note;
+        report "Expected WS period: 20833.33ns (48kHz)" severity note;
         
         report "TB finished" severity failure;  -- Stop simulation cleanly
     end process;
