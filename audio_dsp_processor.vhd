@@ -142,20 +142,10 @@ begin
             stage1_param    <= (others => '0');
         elsif rising_edge(clk_audio) then
             if pipeline_enable = '1' then
-                -- For now, just pass through with validation
-                -- Future: Add input validation, format conversion, etc.
-                
-                if stage0_valid = '1' then
-                    -- Valid sample - pass through
-                    stage1_left     <= stage0_left;
-                    stage1_right    <= stage0_right;
-                    stage1_valid    <= '1';
-                else
-                    -- Invalid sample - maintain previous or zero
-                    stage1_left     <= stage1_left;  -- Hold previous
-                    stage1_right    <= stage1_right; -- Hold previous  
-                    stage1_valid    <= '0';
-                end if;
+                -- Simple pass-through - always forward data
+                stage1_left     <= stage0_left;
+                stage1_right    <= stage0_right;
+                stage1_valid    <= stage0_valid;  -- Pass valid signal through
                 
                 -- Always pass control signals
                 stage1_enable   <= stage0_enable;
@@ -179,19 +169,9 @@ begin
             stage2_valid    <= '0';
         elsif rising_edge(clk_audio) then
             if pipeline_enable = '1' then
-                -- Pass through audio data
-                -- Future: This is where effects will be implemented
-                
-                if stage1_enable = '1' then
-                    -- Effects enabled - for now just pass through
-                    stage2_left     <= stage1_left;
-                    stage2_right    <= stage1_right;
-                else
-                    -- Effects bypassed - direct pass through  
-                    stage2_left     <= stage1_left;
-                    stage2_right    <= stage1_right;
-                end if;
-                
+                -- Simple pass-through - no effects for now
+                stage2_left     <= stage1_left;
+                stage2_right    <= stage1_right;
                 stage2_valid    <= stage1_valid;
             end if;
         end if;

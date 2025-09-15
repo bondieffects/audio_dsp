@@ -1,0 +1,1 @@
+&"C:\intelFPGA_lite\20.1\modelsim_ase\win32aloem\vsim.exe" -c -do "vlib work; vcom i2s_clocks.vhd; vcom i2s_tx.vhd; vcom i2s_rx.vhd; vcom i2s.vhd; vcom i2s_TB.vhd; vsim -t ns work.i2s_TB; run -all; quit"

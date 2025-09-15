@@ -1,0 +1,101 @@
+```mermaid
+---
+title: I2S RX Timing Problem and Solution Analysis
+---
+flowchart TB
+    subgraph "Problem Analysis"
+        direction TB
+        
+        subgraph "I2S Protocol Specification"
+            direction TB
+            WS1["WS Change"] --> DELAY1["1 BCLK Delay"]
+            DELAY1 --> MSB1["MSB (bit 15)"]
+            MSB1 --> DATA1["14 more bits"]
+            DATA1 --> LSB1["LSB (bit 0)"]
+            LSB1 --> COMPLETE1["16 bits complete"]
+        end
+        
+        subgraph "Original Implementation Issue"
+            direction TB
+            WS2["WS Change"] --> IMMEDIATE["Immediate Capture"]
+            IMMEDIATE --> WRONG["Wrong bit alignment"]
+            WRONG --> CORRUPT["Data corruption"]
+            CORRUPT --> FAIL["Test failures"]
+        end
+        
+        subgraph "Root Cause"
+            direction TB
+            MISMATCH["Timing Mismatch:<br/>Protocol has 1 BCLK delay<br/>Implementation had no delay"]
+            OFFSET["Result: Off-by-one bit error<br/>throughout entire capture"]
+        end
+        
+        WS1 -.->|"Expected timing"| MISMATCH
+        WS2 -.->|"Actual timing"| MISMATCH
+        MISMATCH --> OFFSET
+    end
+    
+    subgraph "Solution Implementation"
+        direction TB
+        
+        subgraph "skip_next_bit Flag Logic"
+            direction TB
+            WS3["WS Transition<br/>Detected"] --> SET_FLAG["Set skip_next_bit = '1'<br/>Reset bit_counter = 0"]
+            SET_FLAG --> SKIP_CYCLE["Next BCLK:<br/>Skip data capture<br/>Clear skip_next_bit"]
+            SKIP_CYCLE --> START_CAPTURE["Following BCLK:<br/>Begin normal capture"]
+            START_CAPTURE --> BIT_COUNT["Count bits 0 to 15<br/>(16 bits total)"]
+            BIT_COUNT --> COMPLETE2["Channel complete<br/>at bit_counter = 15"]
+        end
+        
+        subgraph "State Machine Enhancement"
+            direction TB
+            LEFT_STATE["LEFT_CHANNEL<br/>State"] --> CAPTURE_L["Capture left data<br/>when bit_counter = 15"]
+            RIGHT_STATE["RIGHT_CHANNEL<br/>State"] --> CAPTURE_R["Capture right data<br/>when bit_counter = 15"]
+            CAPTURE_L --> SWITCH1["Direct transition<br/>to RIGHT_CHANNEL"]
+            CAPTURE_R --> SWITCH2["Direct transition<br/>to LEFT_CHANNEL"]
+        end
+    end
+    
+    subgraph "Verification Results"
+        direction TB
+        
+        subgraph "Before Fix"
+            direction TB
+            EXPECT_L["Expected Left:<br/>0xDEAD (57005)"] --> GOT_L["Got: 0x6F56 (28502)"]
+            EXPECT_R["Expected Right:<br/>0xBEEF (48879)"] --> GOT_R["Got: 0x7F59 (32617)"]
+            GOT_L --> FAIL_MSG["Sample mismatch errors"]
+            GOT_R --> FAIL_MSG
+        end
+        
+        subgraph "After Fix"
+            direction TB
+            SUCCESS["✅ Successfully verified<br/>5 samples"] --> CORRECT_L["✅ Left: 0xDEAD"]
+            SUCCESS --> CORRECT_R["✅ Right: 0xBEEF"]
+            CORRECT_L --> PROTOCOL["✅ I2S Protocol<br/>Compliant"]
+            CORRECT_R --> PROTOCOL
+        end
+    end
+    
+    subgraph "Key Learning Points"
+        direction TB
+        LESSON1["🎯 Protocol Compliance<br/>Follow exact timing specs"]
+        LESSON2["🧪 Testbench Trust<br/>Well-written tests reveal flaws"]
+        LESSON3["⚡ Simple Solutions<br/>skip_next_bit flag solved it"]
+        LESSON4["🔍 Bit-Level Debug<br/>Trace exact bit positions"]
+    end
+    
+    %% Connections between main sections
+    OFFSET --> WS3
+    COMPLETE2 --> SUCCESS
+    PROTOCOL --> LESSON1
+    
+    %% Styling
+    classDef problemStyle fill:#ffeeee,stroke:#cc0000,stroke-width:2px,color:#000000
+    classDef solutionStyle fill:#eeffee,stroke:#00cc00,stroke-width:2px,color:#000000
+    classDef successStyle fill:#e6ffe6,stroke:#009900,stroke-width:3px,color:#000000
+    classDef learningStyle fill:#fff7e6,stroke:#ff9900,stroke-width:2px,color:#000000
+    
+    class WS2,IMMEDIATE,WRONG,CORRUPT,FAIL,MISMATCH,OFFSET problemStyle
+    class WS3,SET_FLAG,SKIP_CYCLE,START_CAPTURE,BIT_COUNT,COMPLETE2 solutionStyle
+    class SUCCESS,CORRECT_L,CORRECT_R,PROTOCOL successStyle
+    class LESSON1,LESSON2,LESSON3,LESSON4 learningStyle
+```

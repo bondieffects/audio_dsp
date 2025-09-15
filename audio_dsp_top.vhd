@@ -163,9 +163,9 @@ begin
             i2s_ws          => i2s_ws_int,
             i2s_dac         => i2s_dout,
             i2s_adc         => i2s_din,
-            audio_out_left  => dsp_out_left,       -- DSP processed audio TO codec
-            audio_out_right => dsp_out_right,      -- DSP processed audio TO codec
-            audio_out_valid => dsp_out_valid,
+            audio_out_left  => audio_in_left,      -- DIRECT BYPASS - Skip DSP for testing
+            audio_out_right => audio_in_right,     -- DIRECT BYPASS - Skip DSP for testing  
+            audio_out_valid => audio_in_valid,     -- DIRECT BYPASS - Skip DSP for testing
             sample_request  => sample_request,
             audio_in_left   => audio_in_left,       -- Raw audio FROM codec
             audio_in_right  => audio_in_right,      -- Raw audio FROM codec
