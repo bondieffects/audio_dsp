@@ -93,11 +93,16 @@ architecture rtl of audio_dsp_top is
     signal i2s_bclk_int  : std_logic;
     signal i2s_ws_int    : std_logic;
 
-    -- Audio data flow signals
-    signal audio_in_left   : std_logic_vector(15 downto 0);
-    signal audio_in_right  : std_logic_vector(15 downto 0);
-    signal audio_in_valid  : std_logic;
+    -- Audio data flow signals (RX outputs)
+    signal rx_audio_left   : std_logic_vector(15 downto 0);
+    signal rx_audio_right  : std_logic_vector(15 downto 0);
+    signal rx_audio_valid  : std_logic;
     signal sample_request  : std_logic;
+    
+    -- Passthrough signals (RX output -> TX input)
+    signal passthrough_left  : std_logic_vector(15 downto 0);
+    signal passthrough_right : std_logic_vector(15 downto 0);
+    signal passthrough_valid : std_logic;
 
     -- DSP processed signals 
     signal dsp_out_left    : std_logic_vector(15 downto 0);
@@ -124,6 +129,14 @@ begin
     i2s_reset <= reset_n and pll_locked;         -- I2S starts only after PLL locks
 
     -- ========================================================================
+    -- PASSTHROUGH LOGIC (RX -> TX)
+    -- ========================================================================
+    -- Direct passthrough: connect RX outputs to TX inputs
+    passthrough_left  <= rx_audio_left;
+    passthrough_right <= rx_audio_right;
+    passthrough_valid <= rx_audio_valid;
+
+    -- ========================================================================
     -- PLL INSTANTIATION
     -- ========================================================================
     u_audio_pll : audio_pll
@@ -141,9 +154,9 @@ begin
         port map (
             clk_audio       => clk_audio,
             reset_n         => i2s_reset,
-            audio_in_left   => audio_in_left,
-            audio_in_right  => audio_in_right,
-            audio_in_valid  => audio_in_valid,
+            audio_in_left   => rx_audio_left,
+            audio_in_right  => rx_audio_right,
+            audio_in_valid  => rx_audio_valid,
             audio_out_left  => dsp_out_left,
             audio_out_right => dsp_out_right,
             audio_out_valid => dsp_out_valid,
@@ -163,13 +176,13 @@ begin
             i2s_ws          => i2s_ws_int,
             i2s_dac         => i2s_dout,
             i2s_adc         => i2s_din,
-            audio_out_left  => audio_in_left,      -- DIRECT BYPASS - Skip DSP for testing
-            audio_out_right => audio_in_right,     -- DIRECT BYPASS - Skip DSP for testing  
-            audio_out_valid => audio_in_valid,     -- DIRECT BYPASS - Skip DSP for testing
-            sample_request  => sample_request,
-            audio_in_left   => audio_in_left,       -- Raw audio FROM codec
-            audio_in_right  => audio_in_right,      -- Raw audio FROM codec
-            audio_in_valid  => audio_in_valid
+            audio_out_left  => passthrough_left,   -- TX gets data from passthrough
+            audio_out_right => passthrough_right,  -- TX gets data from passthrough  
+            audio_out_valid => passthrough_valid,  -- TX gets valid from passthrough
+            sample_request  => sample_request,     -- TX requests samples
+            audio_in_left   => rx_audio_left,      -- RX outputs audio data
+            audio_in_right  => rx_audio_right,     -- RX outputs audio data
+            audio_in_valid  => rx_audio_valid      -- RX outputs valid signal
         );
 
     -- ========================================================================
@@ -182,13 +195,13 @@ begin
     i2s_ws <= i2s_ws_int;       -- Send 48kHz word select to CODEC (corrected name)
     
     -- Status LEDs (inverted for active-low LEDs)
-    led(0) <= not pll_locked;          -- PLL lock indicator (inverted)
-    led(1) <= not audio_in_valid;      -- Audio input activity (inverted)
-    led(2) <= not sample_request;      -- Sample rate indicator (inverted)
-    led(3) <= not i2s_reset;           -- I2S system active (inverted)
+    led(0) <= not pll_locked;            -- PLL lock indicator (inverted)
+    led(1) <= not rx_audio_valid;        -- RX data activity (inverted)
+    led(2) <= not passthrough_valid;     -- TX data activity (inverted)
+    led(3) <= not sample_request;        -- Sample request activity (inverted)
     
     -- Test points for debugging
-    test_point_1 <= pll_locked;       -- Check PLL lock status directly
-    test_point_2 <= i2s_reset;        -- Check I2S reset status directly
+    test_point_1 <= rx_audio_valid;      -- Show RX data valid
+    test_point_2 <= passthrough_valid;   -- Show TX data valid
 
 end architecture rtl;
