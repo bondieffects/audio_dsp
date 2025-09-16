@@ -1,29 +1,29 @@
 flowchart TB
     %% I2S Interface Block Diagram
     
-    subgraph inputs ["🔌 External Inputs"]
+    subgraph inputs ["External Inputs"]
         MCLK[Master Clock]
         RST[Reset]
         ADC_IN[ADC Data In]
     end
     
-    subgraph outputs ["📡 External Outputs"]
+    subgraph outputs ["External Outputs"]
         DAC_OUT[DAC Data Out]
         REQ[Sample Request]
     end
     
-    subgraph clocks ["⏰ Clock Generator i2s_clocks"]
+    subgraph clocks ["Clock Generator i2s_clocks"]
         BCLK[Bit Clock]
         WS[Word Select]
     end
     
-    subgraph tx ["📤 I2S Transmitter i2s_tx"]
+    subgraph tx ["I2S Transmitter i2s_tx"]
         TX_LEFT[Left Audio Out]
         TX_RIGHT[Right Audio Out]
         TX_VALID[Audio Out Valid]
     end
     
-    subgraph rx ["📥 I2S Receiver i2s_rx"]
+    subgraph rx ["I2S Receiver i2s_rx"]
         RX_LEFT[Left Audio In]
         RX_RIGHT[Right Audio In] 
         RX_VALID[Audio In Valid]
