@@ -13,6 +13,8 @@ set_location_assignment PIN_32 -to i2s_ws
 set_location_assignment PIN_33 -to i2s_din
 set_location_assignment PIN_34 -to i2s_dout
 
+set_location_assignment PIN_115 -to midi_rx
+
 # Status LEDs
 set_location_assignment PIN_84 -to led[0]
 set_location_assignment PIN_85 -to led[1]
