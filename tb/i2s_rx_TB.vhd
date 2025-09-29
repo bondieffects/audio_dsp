@@ -144,28 +144,43 @@ begin
   begin
       loop
           wait until rising_edge(i2s_bclk);
-          prev_sd := i2s_sd;
+          prev_sd := i2s_sdata;
           wait for 1 ns; -- delta cycle to catch glitch
-          assert i2s_sd = prev_sd
+          assert i2s_sdata = prev_sd
             report "SD changed on rising edge (should be stable)"
             severity error;
       end loop;
   end process;
 
-  -- Word length check: exactly 16 bits per channel
-  word_length : process
-      variable bit_count : integer := 0;
-      variable prev_ws   : std_logic := '0';
+  -- I2S Frame length check: exactly 17 BCLK periods per channel (1 setup + 16 data)
+  frame_length : process
+      variable bclk_count : integer := 1;
+      variable prev_ws    : std_logic := '0';
+      variable first_run  : boolean := true;
   begin
+      -- Initialize - start counting from the first BCLK edge
+      wait until rising_edge(i2s_bclk);
+      prev_ws := i2s_ws;
+      bclk_count := 1;  -- This is the first BCLK of the frame
+      
       loop
           wait until rising_edge(i2s_bclk);
-          bit_count := bit_count + 1;
+          
           if i2s_ws /= prev_ws then
-              assert bit_count = 16
-                report "Expected 16 bits, got " & integer'image(bit_count)
-                severity error;
-              bit_count := 0;
-              prev_ws   := i2s_ws;
+              -- WS transition detected - end of previous frame
+              if not first_run then
+                  -- Check frame length (should be 17 BCLKs per I2S spec)
+                  assert bclk_count = 17
+                    report "Expected 17 BCLK periods per I2S channel, got " & integer'image(bclk_count)
+                    severity error;
+              else
+                  first_run := false;
+              end if;
+              
+              bclk_count := 1;  -- Start counting new frame (current BCLK is first of new frame)
+              prev_ws := i2s_ws;
+          else
+              bclk_count := bclk_count + 1;  -- Continue counting in current frame
           end if;
       end loop;
   end process;
