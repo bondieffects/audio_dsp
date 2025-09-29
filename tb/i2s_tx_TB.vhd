@@ -90,15 +90,19 @@ begin
         wait until falling_edge(i2s_bclk);
 
         loop
-            -- LEFT CHANNEL - WS = 0 for exactly 16 BCLK periods
-            i2s_ws <= '0';
-            for i in 1 to 16 loop               -- 16 BCLK periods for left channel
+            -- I2S FRAME: Each channel gets 17 BCLK periods total
+            -- Period 1: WS changes (setup time)  
+            -- Periods 2-17: 16 bits of data transmission
+            
+            -- LEFT CHANNEL FRAME (17 BCLK periods total)
+            i2s_ws <= '0';      -- Change WS to indicate left channel
+            for i in 1 to 17 loop   -- WS=0 for 17 BCLK periods (1 setup + 16 data)
                 wait until falling_edge(i2s_bclk);
             end loop;
 
-            -- RIGHT CHANNEL - WS = 1 for exactly 16 BCLK periods  
-            i2s_ws <= '1';
-            for i in 1 to 16 loop               -- 16 BCLK periods for right channel
+            -- RIGHT CHANNEL FRAME (17 BCLK periods total)
+            i2s_ws <= '1';      -- Change WS to indicate right channel
+            for i in 1 to 17 loop   -- WS=1 for 17 BCLK periods (1 setup + 16 data)
                 wait until falling_edge(i2s_bclk);
             end loop;
         end loop;
@@ -158,7 +162,7 @@ begin
                         channel_state := "LEFT";
                         bit_count := 1;
                         left_shift_reg := (others => '0');
-                        left_shift_reg := left_shift_reg(14 downto 0) & i2s_sdata;  -- Standard shift register
+                        left_shift_reg := i2s_sdata & left_shift_reg(15 downto 1);  -- MSB-first shift register
                         report "Starting LEFT channel (WS=0)" severity note;
                     elsif i2s_ws = '1' then
                         -- Start RIGHT channel - Wait one BCLK period after WS changes before sampling MSB
@@ -166,7 +170,7 @@ begin
                         channel_state := "RGHT";
                         bit_count := 1;
                         right_shift_reg := (others => '0');
-                        right_shift_reg := right_shift_reg(14 downto 0) & i2s_sdata;  -- Standard shift register
+                        right_shift_reg := i2s_sdata & right_shift_reg(15 downto 1);  -- MSB-first shift register
                         report "Starting RIGHT channel (WS=1)" severity note;
                     end if;
 
@@ -174,7 +178,7 @@ begin
                     if bit_count < 16 then
                         -- Continue collecting bits
                         wait until rising_edge(i2s_bclk);
-                        left_shift_reg := left_shift_reg(14 downto 0) & i2s_sdata;
+                        left_shift_reg := i2s_sdata & left_shift_reg(15 downto 1);  -- MSB-first
                         bit_count := bit_count + 1;
 
                         if bit_count = 16 then
@@ -191,7 +195,7 @@ begin
                     if bit_count < 16 then
                         -- Continue collecting bits
                         wait until rising_edge(i2s_bclk);
-                        right_shift_reg := right_shift_reg(14 downto 0) & i2s_sdata;
+                        right_shift_reg := i2s_sdata & right_shift_reg(15 downto 1);  -- MSB-first
                         bit_count := bit_count + 1;
 
                         if bit_count = 16 then

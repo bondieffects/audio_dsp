@@ -28,132 +28,82 @@ entity i2s_tx is
 end entity i2s_tx;
 
 architecture rtl of i2s_tx is
-
-    -- State machine for I2S transmission
-    type i2s_tx_state_t is (IDLE, LEFT_CHANNEL, RIGHT_CHANNEL);
-    signal tx_state : i2s_tx_state_t := IDLE;
-
-    -- Shift register for serial transmission
-    signal tx_shift_register : std_logic_vector(15 downto 0) := (others => '0');
-    signal bit_counter : unsigned(4 downto 0) := "00000";
-
-    -- Sample request generation
+    -- I2S Transmitter signals
+    signal ws_prev : std_logic := '0';
     signal request_sample : std_logic := '0';
-
-    -- Data latching
-    signal left_data_latched  : std_logic_vector(15 downto 0) := (others => '0');
-    signal right_data_latched : std_logic_vector(15 downto 0) := (others => '0');
+    
+    -- Data storage
+    signal left_data_reg : std_logic_vector(15 downto 0) := (others => '0');
+    signal right_data_reg : std_logic_vector(15 downto 0) := (others => '0');
+    
+    -- Transmission control
+    signal bit_count : integer range 0 to 16 := 0;
+    signal transmitting : std_logic := '0';
+    signal current_data : std_logic_vector(15 downto 0) := (others => '0');
 
 begin
-
     -- ============================================================================
-    -- Sample Request Generation
-    -- ============================================================================
-    process(i2s_bclk, reset_n)
-    begin
-        if reset_n = '0' then
-            request_sample <= '0';
-        elsif rising_edge(i2s_bclk) then
-            -- Generate sample request at start of left channel
-            if i2s_ws = '0' and tx_state = IDLE then
-                request_sample <= '1';
-            else
-                request_sample <= '0';
-            end if;
-        end if;
-    end process;
-
-    -- ============================================================================
-    -- Data Latching (Capture data when tx_ready is asserted)
+    -- I2S Transmitter Process - Simple and Direct I2S Implementation
     -- ============================================================================
     process(i2s_bclk, reset_n)
+        variable bclk_count : integer range 0 to 20 := 0;
+        variable tx_data : std_logic_vector(15 downto 0);
     begin
         if reset_n = '0' then
-            left_data_latched  <= (others => '0');
-            right_data_latched <= (others => '0');
-        elsif rising_edge(i2s_bclk) then
-            -- Latch data whenever new valid data is available
-            if tx_ready = '1' then
-                left_data_latched  <= audio_left;
-                right_data_latched <= audio_right;
-            end if;
-        end if;
-    end process;
-
-    -- ============================================================================
-    -- I2S TRANSMITTER STATE MACHINE
-    -- ============================================================================
-    process(i2s_bclk, reset_n)
-    begin
-        if reset_n = '0' then
-            tx_state <= IDLE;
-            tx_shift_register <= (others => '0');
-            bit_counter <= "00000";
+            -- Reset all signals
             i2s_sdata <= '0';
-
-        elsif falling_edge(i2s_bclk) then  -- Transmit on falling edge per I2S spec
-
-            case tx_state is
-
-                when IDLE =>
-                    i2s_sdata <= '0';
-                    if i2s_ws = '0' then
-                        -- Start left channel
-                        tx_shift_register <= left_data_latched(14 downto 0) & '0';  -- Pre-shift for next bit
-                        bit_counter <= "00001";  -- Start at 1 since we're outputting bit 0 now
-                        tx_state <= LEFT_CHANNEL;
-                        i2s_sdata <= left_data_latched(15);  -- Output MSB immediately
-                    elsif i2s_ws = '1' then
-                        -- Start right channel
-                        tx_shift_register <= right_data_latched(14 downto 0) & '0';  -- Pre-shift for next bit
-                        bit_counter <= "00001";  -- Start at 1 since we're outputting bit 0 now
-                        tx_state <= RIGHT_CHANNEL;
-                        i2s_sdata <= right_data_latched(15);  -- Output MSB immediately
-                    end if;
-
-                when LEFT_CHANNEL =>
-                    if i2s_ws = '0' then
-                        -- Continue left channel transmission
-                        i2s_sdata <= tx_shift_register(15);
-                        tx_shift_register <= tx_shift_register(14 downto 0) & '0';
-                        bit_counter <= bit_counter + 1;
-
-                        -- After 16 bits, go idle
-                        if bit_counter = "10000" then  -- 16 in binary (since we start at 1)
-                            tx_state <= IDLE;
-                        end if;
-                    else
-                        -- WS changed to right channel
-                        bit_counter <= "00001";  -- Start at 1 since we're outputting bit 0 now
-                        tx_shift_register <= right_data_latched(14 downto 0) & '0';  -- Pre-shift for next bit
-                        tx_state <= RIGHT_CHANNEL;
-                        i2s_sdata <= right_data_latched(15);  -- Output MSB immediately
-                    end if;
-
-                when RIGHT_CHANNEL =>
-                    if i2s_ws = '1' then
-                        -- Continue right channel transmission
-                        i2s_sdata <= tx_shift_register(15);
-                        tx_shift_register <= tx_shift_register(14 downto 0) & '0';
-                        bit_counter <= bit_counter + 1;
-
-                        -- After 16 bits, go idle
-                        if bit_counter = "10000" then  -- 16 in binary (since we start at 1)
-                            tx_state <= IDLE;
-                        end if;
-                    else
-                        -- WS changed to left channel
-                        bit_counter <= "00001";  -- Start at 1 since we're outputting bit 0 now
-                        tx_shift_register <= left_data_latched(14 downto 0) & '0';  -- Pre-shift for next bit
-                        tx_state <= LEFT_CHANNEL;
-                        i2s_sdata <= left_data_latched(15);  -- Output MSB immediately
-                    end if;
-
-            end case;
+            ws_prev <= '0';
+            request_sample <= '0';
+            left_data_reg <= (others => '0');
+            right_data_reg <= (others => '0');
+            bclk_count := 0;
+            tx_data := (others => '0');
+            
+        elsif falling_edge(i2s_bclk) then
+            -- Default: no sample request
+            request_sample <= '0';
+            
+            -- Sample request on WS falling edge (start of new frame)
+            if ws_prev = '1' and i2s_ws = '0' then
+                request_sample <= '1';
+                if tx_ready = '1' then
+                    left_data_reg <= audio_left;
+                    right_data_reg <= audio_right;
+                end if;
+            end if;
+            
+            -- Detect WS changes and reset bit counter
+            if ws_prev /= i2s_ws then
+                bclk_count := 0;  -- Reset counter on WS change
+                
+                -- Load appropriate data for the new channel
+                if i2s_ws = '0' then
+                    tx_data := left_data_reg;   -- Left channel
+                else
+                    tx_data := right_data_reg;  -- Right channel
+                end if;
+            else
+                bclk_count := bclk_count + 1;  -- Increment counter
+            end if;
+            
+            -- I2S Data Transmission
+            if bclk_count = 0 then
+                -- First BCLK after WS change - output 0 (setup time)
+                i2s_sdata <= '0';
+            elsif bclk_count >= 1 and bclk_count <= 16 then
+                -- Transmit 16 bits of data (MSB first)
+                i2s_sdata <= tx_data(16 - bclk_count);
+            else
+                -- Outside data transmission period
+                i2s_sdata <= '0';
+            end if;
+            
+            -- Update WS history
+            ws_prev <= i2s_ws;
         end if;
     end process;
-
-    -- Output assignment
+    
+    -- Connect sample request output
     sample_request <= request_sample;
 
 end architecture rtl;
