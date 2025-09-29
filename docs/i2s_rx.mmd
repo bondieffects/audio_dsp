@@ -1,0 +1,97 @@
+flowchart TB
+    %% I2S RX (Receiver) Block Diagram - Detailed Implementation
+
+    RST["reset_n<br/>Active Low Reset"]
+
+    subgraph inputs ["External Inputs"]
+        BCLK["i2s_bclk<br/>Bit Clock<br/>(Rising Edge Trigger)"]
+        WS["i2s_ws<br/>Word Select<br/>0=Left, 1=Right"]
+        SDATA["i2s_sdata<br/>Serial Audio Data<br/>(MSB First)"]
+    end
+    
+    subgraph outputs ["Audio Outputs"]
+        LEFT["audio_left<br/>16-bit Left Sample"]
+        RIGHT["audio_right<br/>16-bit Right Sample"] 
+        READY["rx_ready<br/>Sample Ready Flag<br/>(Pulse when both ready)"]
+    end
+    
+    subgraph state_machine ["RX State Machine"]
+        IDLE_STATE["IDLE State<br/>Wait for WS=0<br/>(Left Channel Start)"]
+        LEFT_STATE["LEFT_CHANNEL State<br/>• sync_ready synchronization<br/>• Receive 16-bit left sample<br/>• Shift on BCLK rising edge"]
+        RIGHT_STATE["RIGHT_CHANNEL State<br/>• sync_ready synchronization<br/>• Receive 16-bit right sample<br/>• Set valid_output=1 after 16 bits"]
+    end
+    
+    subgraph control_logic ["Control & Synchronization"]
+        SYNC["sync_ready Flag<br/>Waits one clock after<br/>WS transition for sync<br/>(Prevents first bit corruption)"]
+        BITCOUNT["bit_counter<br/>5-bit Counter (0-15)<br/>Tracks received bits<br/>Resets after 16 bits"]
+        WS_DETECT["WS Transition Detection<br/>Handles early WS changes<br/>Resets counters and registers"]
+    end
+    
+    subgraph data_path ["Data Processing Path"]
+        SHIFTREG["rx_shift_register<br/>16-bit Shift Register<br/>Serial to Parallel Conversion<br/>MSB First (Left-Justified)"]
+        COMBINE["Final Bit Combination<br/>Combines 15 buffered bits<br/>+ current bit = 16-bit sample"]
+    end
+    
+    subgraph storage ["Sample Storage & Output Control"]
+        LEFT_SAMPLE["left_sample<br/>16-bit Register<br/>Stores completed left sample"]
+        RIGHT_SAMPLE["right_sample<br/>16-bit Register<br/>Stores completed right sample"]
+        VALID_FLAG["valid_output<br/>Control Signal<br/>Pulses high when both samples ready"]
+    end
+
+    %% Input connections
+    RST --> state_machine
+    RST --> control_logic
+    RST --> data_path
+    RST --> storage
+    
+    BCLK --> state_machine
+    BCLK --> control_logic
+    BCLK --> data_path
+    
+    WS --> state_machine
+    WS --> control_logic
+    
+    SDATA --> data_path
+    
+    %% State machine flow
+    IDLE_STATE -->|"WS=0 detected"| LEFT_STATE
+    LEFT_STATE -->|"16 bits received OR<br/>WS changes to 1"| RIGHT_STATE
+    RIGHT_STATE -->|"16 bits received OR<br/>WS changes to 0"| LEFT_STATE
+    
+    %% Control flow
+    state_machine --> control_logic
+    control_logic --> data_path
+    data_path --> storage
+    
+    %% Detailed data flow annotations
+    SYNC -.->|"Enables bit shifting<br/>after WS sync"| SHIFTREG
+    BITCOUNT -.->|"Counts 0-15<br/>Triggers sample completion"| COMBINE
+    WS_DETECT -.->|"Early WS change<br/>Resets everything"| SHIFTREG
+    
+    SHIFTREG -.->|"Shift left operation:<br/>reg(14:0) & sdata"| COMBINE
+    COMBINE -.->|"After 16 bits<br/>Left channel complete"| LEFT_SAMPLE
+    COMBINE -.->|"After 16 bits<br/>Right channel complete<br/>Set valid_output=1"| RIGHT_SAMPLE
+    
+    %% Output connections  
+    LEFT_SAMPLE --> LEFT
+    RIGHT_SAMPLE --> RIGHT
+    VALID_FLAG --> READY
+
+    %% Additional process flow annotations
+    LEFT_STATE -.->|"bit_counter = 15<br/>Complete sample"| LEFT_SAMPLE
+    RIGHT_STATE -.->|"bit_counter = 15<br/>Complete sample<br/>Set valid_output"| RIGHT_SAMPLE
+
+    %% Styling
+    classDef inputStyle fill:#e1f5fe,stroke:#01579b,stroke-width:2px,color:#000
+    classDef outputStyle fill:#f3e5f5,stroke:#4a148c,stroke-width:2px,color:#000
+    classDef stateStyle fill:#fff3e0,stroke:#e65100,stroke-width:2px,color:#000
+    classDef controlStyle fill:#e8f5e8,stroke:#1b5e20,stroke-width:2px,color:#000
+    classDef dataStyle fill:#e3f2fd,stroke:#0d47a1,stroke-width:2px,color:#000
+    classDef storageStyle fill:#ffebee,stroke:#c62828,stroke-width:2px,color:#000
+
+    class BCLK,WS,RST,SDATA inputStyle
+    class LEFT,RIGHT,READY outputStyle
+    class IDLE_STATE,LEFT_STATE,RIGHT_STATE stateStyle
+    class SYNC,BITCOUNT,WS_DETECT controlStyle
+    class SHIFTREG,COMBINE dataStyle
+    class LEFT_SAMPLE,RIGHT_SAMPLE,VALID_FLAG storageStyle

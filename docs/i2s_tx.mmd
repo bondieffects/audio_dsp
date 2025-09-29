@@ -1,0 +1,134 @@
+flowchart TB
+    %% I2S TX (Transmitter) Block Diagram - Detailed Implementation
+
+    RST["reset_n<br/>Active Low Reset"]
+
+    subgraph inputs ["External Inputs"]
+        BCLK["i2s_bclk<br/>Bit Clock<br/>(Falling Edge Trigger)"]
+        WS["i2s_ws<br/>Word Select<br/>0=Left, 1=Right"]
+        LEFT_IN["audio_left<br/>16-bit Left Sample<br/>Parallel Input"]
+        RIGHT_IN["audio_right<br/>16-bit Right Sample<br/>Parallel Input"]
+        TX_RDY["tx_ready<br/>Input Data Ready Flag"]
+    end
+    
+    subgraph outputs ["Serial Output & Control"]
+        SDATA_OUT["i2s_sdata<br/>Serial Audio Data Output<br/>(MSB First, Left-Justified)"]
+        SAMPLE_REQ["sample_request<br/>Sample Request Flag<br/>(Pulses on WS falling edge)"]
+    end
+    
+    subgraph ws_detection ["WS Transition Detection"]
+        WS_PREV["ws_prev<br/>Previous WS State<br/>Edge Detection Register"]
+        WS_EDGE["WS Edge Detection<br/>Detects WS transitions<br/>Triggers sample request"]
+        FALL_DETECT["WS Falling Edge<br/>ws_prev=1 & i2s_ws=0<br/>Start of new frame"]
+    end
+    
+    subgraph sample_control ["Sample Input Control"]
+        REQ_GEN["request_sample<br/>Internal Request Signal<br/>Generated on WS falling edge"]
+        DATA_CAPTURE["Data Capture Logic<br/>Loads samples when<br/>tx_ready=1 & request=1"]
+    end
+    
+    subgraph data_storage ["Data Storage Registers"]
+        LEFT_REG["left_data_reg<br/>16-bit Left Sample Buffer<br/>Loaded on sample request"]
+        RIGHT_REG["right_data_reg<br/>16-bit Right Sample Buffer<br/>Loaded on sample request"]
+        CURRENT_DATA["current_data (tx_data)<br/>16-bit Active Transmission Data<br/>Selected based on WS"]
+    end
+    
+    subgraph transmission_control ["Transmission Control Logic"]
+        BCLK_COUNT["bclk_count<br/>Bit Position Counter (0-20)<br/>Resets on WS change"]
+        CHANNEL_SELECT["Channel Selection<br/>WS=0: Load left_data_reg<br/>WS=1: Load right_data_reg"]
+        BIT_SELECT["Bit Selection Logic<br/>Outputs tx_data(16-bclk_count)<br/>MSB first transmission"]
+    end
+    
+    subgraph output_logic ["Serial Output Generation"]
+        SETUP_TIME["Setup Time (bclk_count=0)<br/>Output '0' for timing"]
+        DATA_PERIOD["Data Period (1-16)<br/>Transmit 16 data bits<br/>MSB first"]
+        IDLE_PERIOD["Idle Period (>16)<br/>Output '0' until next WS"]
+        SDATA_MUX["Serial Data Multiplexer<br/>Selects output based on<br/>bclk_count value"]
+    end
+
+    %% Input connections
+    RST --> ws_detection
+    RST --> sample_control
+    RST --> data_storage
+    RST --> transmission_control
+    RST --> output_logic
+    
+    BCLK --> ws_detection
+    BCLK --> sample_control
+    BCLK --> transmission_control
+    BCLK --> output_logic
+    
+    WS --> ws_detection
+    WS --> transmission_control
+    
+    LEFT_IN --> sample_control
+    RIGHT_IN --> sample_control
+    TX_RDY --> sample_control
+    
+    %% WS Detection Flow
+    WS --> WS_PREV
+    WS_PREV --> WS_EDGE
+    WS_EDGE --> FALL_DETECT
+    FALL_DETECT --> REQ_GEN
+    
+    %% Sample Control Flow
+    REQ_GEN --> DATA_CAPTURE
+    DATA_CAPTURE --> LEFT_REG
+    DATA_CAPTURE --> RIGHT_REG
+    
+    %% Data Storage to Transmission
+    LEFT_REG --> CHANNEL_SELECT
+    RIGHT_REG --> CHANNEL_SELECT
+    CHANNEL_SELECT --> CURRENT_DATA
+    
+    %% Transmission Control Flow
+    WS --> BCLK_COUNT
+    BCLK_COUNT --> BIT_SELECT
+    CURRENT_DATA --> BIT_SELECT
+    BIT_SELECT --> SDATA_MUX
+    
+    %% Output Logic Flow
+    BCLK_COUNT --> SETUP_TIME
+    BCLK_COUNT --> DATA_PERIOD
+    BCLK_COUNT --> IDLE_PERIOD
+    SETUP_TIME --> SDATA_MUX
+    DATA_PERIOD --> SDATA_MUX
+    IDLE_PERIOD --> SDATA_MUX
+    
+    %% Final Outputs
+    SDATA_MUX --> SDATA_OUT
+    REQ_GEN --> SAMPLE_REQ
+    
+    %% Detailed data flow annotations
+    FALL_DETECT -.->|"WS falling edge<br/>Start new frame"| REQ_GEN
+    REQ_GEN -.->|"request_sample='1'<br/>One clock pulse"| DATA_CAPTURE
+    DATA_CAPTURE -.->|"If tx_ready='1'<br/>Load new samples"| LEFT_REG
+    DATA_CAPTURE -.->|"If tx_ready='1'<br/>Load new samples"| RIGHT_REG
+    
+    WS_EDGE -.->|"Any WS change<br/>Reset bclk_count=0"| BCLK_COUNT
+    CHANNEL_SELECT -.->|"WS=0: Left channel<br/>WS=1: Right channel"| CURRENT_DATA
+    
+    BIT_SELECT -.->|"bclk_count 1-16:<br/>tx_data(16-bclk_count)"| DATA_PERIOD
+    SETUP_TIME -.->|"bclk_count=0:<br/>Output '0'"| SDATA_MUX
+    IDLE_PERIOD -.->|"bclk_count>16:<br/>Output '0'"| SDATA_MUX
+
+    %% Timing annotations
+    BCLK -.->|"Falling edge<br/>triggered"| transmission_control
+    WS_PREV -.->|"Edge detection<br/>ws_prev ≠ i2s_ws"| WS_EDGE
+
+    %% Styling
+    classDef inputStyle fill:#e1f5fe,stroke:#01579b,stroke-width:2px,color:#000
+    classDef outputStyle fill:#f3e5f5,stroke:#4a148c,stroke-width:2px,color:#000
+    classDef wsStyle fill:#fff3e0,stroke:#e65100,stroke-width:2px,color:#000
+    classDef controlStyle fill:#e8f5e8,stroke:#1b5e20,stroke-width:2px,color:#000
+    classDef storageStyle fill:#ffebee,stroke:#c62828,stroke-width:2px,color:#000
+    classDef transmitStyle fill:#e3f2fd,stroke:#0d47a1,stroke-width:2px,color:#000
+    classDef outputLogicStyle fill:#fce4ec,stroke:#880e4f,stroke-width:2px,color:#000
+
+    class BCLK,WS,RST,LEFT_IN,RIGHT_IN,TX_RDY inputStyle
+    class SDATA_OUT,SAMPLE_REQ outputStyle
+    class WS_PREV,WS_EDGE,FALL_DETECT wsStyle
+    class REQ_GEN,DATA_CAPTURE controlStyle
+    class LEFT_REG,RIGHT_REG,CURRENT_DATA storageStyle
+    class BCLK_COUNT,CHANNEL_SELECT,BIT_SELECT transmitStyle
+    class SETUP_TIME,DATA_PERIOD,IDLE_PERIOD,SDATA_MUX outputLogicStyle
