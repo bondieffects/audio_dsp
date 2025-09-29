@@ -54,6 +54,7 @@ begin
     process(i2s_bclk, reset_n)
     begin
         if reset_n = '0' then
+            -- Clean reset of all signals
             rx_state <= IDLE;
             rx_shift_register <= (others => '0');
             bit_counter <= "00000";
