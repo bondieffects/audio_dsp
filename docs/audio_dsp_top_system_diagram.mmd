@@ -1,0 +1,162 @@
+flowchart TB
+    %% Audio DSP Top Level System Architecture
+
+    subgraph external ["External Interfaces"]
+        CLK50["clk_50mhz<br/>50MHz System Clock<br/>Input"]
+        RST_IN["reset_n<br/>Active Low Reset<br/>Input"]
+        I2S_DIN["i2s_din<br/>Serial Audio Input<br/>from WM8731 ADC<br/>PIN_33"]
+        
+        I2S_MCLK["i2s_mclk<br/>12.288MHz Master Clock<br/>to WM8731<br/>PIN_30"]
+        I2S_BCLK["i2s_bclk<br/>1.536MHz Bit Clock<br/>to WM8731<br/>PIN_31"]
+        I2S_WS["i2s_ws<br/>48kHz Word Select<br/>to WM8731<br/>PIN_32"]
+        I2S_DOUT["i2s_dout<br/>Serial Audio Output<br/>to WM8731 DAC<br/>PIN_34"]
+        
+        LEDS["led[3:0]<br/>Status LEDs<br/>PIN_84-87"]
+        TEST1["test_point_1<br/>WS Debug<br/>PIN_50"]
+        TEST2["test_point_2<br/>Sample Req Debug<br/>PIN_51"]
+    end
+
+    subgraph pll_subsystem ["Audio PLL Subsystem"]
+        PLL["audio_pll<br/>IP Core<br/>• 50MHz → 12.288MHz<br/>• Phase-locked generation<br/>• Lock indicator"]
+        PLL_RST["pll_areset<br/>Active High Reset<br/>~reset_n"]
+        PLL_LOCK["pll_locked<br/>PLL Lock Status<br/>System Enable"]
+        MCLK_INT["mclk_12288<br/>12.288MHz Internal<br/>Master Clock"]
+    end
+
+    subgraph reset_logic ["Reset & System Control"]
+        SYS_RST["system_reset<br/>reset_n AND pll_locked<br/>System Ready Signal"]
+        HEARTBEAT["heartbeat[23:0]<br/>24-bit Counter<br/>Status Indicator"]
+    end
+
+    subgraph clock_gen ["I2S Clock Generation"]
+        I2S_CLKS["i2s_clocks<br/>Clock Divider Module<br/>• MCLK ÷ 8 = BCLK<br/>• BCLK ÷ 32 = WS"]
+        BCLK_INT["bclk_int<br/>1.536MHz Internal<br/>Bit Clock"]
+        WS_INT["ws_int<br/>48kHz Internal<br/>Word Select"]
+    end
+
+    subgraph audio_rx ["I2S Receiver Path"]
+        RX_MODULE["i2s_rx<br/>Serial to Parallel<br/>• MSB First Reception<br/>• 16-bit L/R Samples<br/>• State Machine Control"]
+        RX_LEFT["rx_left[15:0]<br/>Left Channel<br/>Parallel Data"]
+        RX_RIGHT["rx_right[15:0]<br/>Right Channel<br/>Parallel Data"]
+        RX_READY["rx_ready<br/>Data Valid Flag<br/>Sample Complete"]
+    end
+
+    subgraph passthrough ["Audio Processing & Passthrough"]
+        PASS_LOGIC["Passthrough Logic<br/>• rx_ready → load tx data<br/>• sample_request → keep tx_ready<br/>• Direct audio path"]
+        TX_LEFT["tx_left[15:0]<br/>Left Channel<br/>Output Data"]
+        TX_RIGHT["tx_right[15:0]<br/>Right Channel<br/>Output Data"]
+        TX_READY["tx_ready<br/>Data Available Flag<br/>for Transmission"]
+    end
+
+    subgraph audio_tx ["I2S Transmitter Path"]
+        TX_MODULE["i2s_tx<br/>Parallel to Serial<br/>• MSB First Transmission<br/>• 16-bit L/R Samples<br/>• Sample Request Gen"]
+        SAMPLE_REQ["sample_request<br/>Request New Sample<br/>Timing Control"]
+        TX_SERIAL["Serial Audio Output<br/>I2S Formatted Data"]
+    end
+
+    subgraph status_debug ["Status & Debug"]
+        LED_LOGIC["LED Status Logic<br/>• LED0: Heartbeat<br/>• LED1: PLL Lock<br/>• LED2: System Ready<br/>• LED3: RX Activity"]
+        TEST_LOGIC["Test Point Logic<br/>• TP1: Word Select<br/>• TP2: Sample Request"]
+    end
+
+    %% External Input Connections
+    CLK50 --> PLL
+    RST_IN --> PLL_RST
+    RST_IN --> SYS_RST
+    I2S_DIN --> RX_MODULE
+
+    %% PLL Subsystem Flow
+    PLL_RST --> PLL
+    PLL --> MCLK_INT
+    PLL --> PLL_LOCK
+    PLL_LOCK --> SYS_RST
+
+    %% Clock Generation Flow
+    MCLK_INT --> I2S_CLKS
+    SYS_RST --> I2S_CLKS
+    I2S_CLKS --> BCLK_INT
+    I2S_CLKS --> WS_INT
+
+    %% Audio RX Flow
+    BCLK_INT --> RX_MODULE
+    WS_INT --> RX_MODULE
+    SYS_RST --> RX_MODULE
+    RX_MODULE --> RX_LEFT
+    RX_MODULE --> RX_RIGHT
+    RX_MODULE --> RX_READY
+
+    %% Passthrough Logic Flow
+    RX_LEFT --> PASS_LOGIC
+    RX_RIGHT --> PASS_LOGIC
+    RX_READY --> PASS_LOGIC
+    SAMPLE_REQ --> PASS_LOGIC
+    PASS_LOGIC --> TX_LEFT
+    PASS_LOGIC --> TX_RIGHT
+    PASS_LOGIC --> TX_READY
+
+    %% Audio TX Flow
+    BCLK_INT --> TX_MODULE
+    WS_INT --> TX_MODULE
+    SYS_RST --> TX_MODULE
+    TX_LEFT --> TX_MODULE
+    TX_RIGHT --> TX_MODULE
+    TX_READY --> TX_MODULE
+    TX_MODULE --> SAMPLE_REQ
+    TX_MODULE --> TX_SERIAL
+
+    %% Status and Debug
+    MCLK_INT --> HEARTBEAT
+    SYS_RST --> HEARTBEAT
+    HEARTBEAT --> LED_LOGIC
+    PLL_LOCK --> LED_LOGIC
+    SYS_RST --> LED_LOGIC
+    RX_READY --> LED_LOGIC
+    WS_INT --> TEST_LOGIC
+    SAMPLE_REQ --> TEST_LOGIC
+
+    %% External Output Connections
+    MCLK_INT --> I2S_MCLK
+    BCLK_INT --> I2S_BCLK
+    WS_INT --> I2S_WS
+    TX_SERIAL --> I2S_DOUT
+    LED_LOGIC --> LEDS
+    TEST_LOGIC --> TEST1
+    TEST_LOGIC --> TEST2
+
+    %% Detailed Data Flow Annotations
+    PLL -.->|"12.288MHz<br/>Audio Master Clock"| MCLK_INT
+    I2S_CLKS -.->|"÷8 = 1.536MHz<br/>Bit Clock"| BCLK_INT
+    I2S_CLKS -.->|"÷256 = 48kHz<br/>L/R Clock"| WS_INT
+    
+    RX_MODULE -.->|"Serial → Parallel<br/>16-bit samples"| RX_LEFT
+    RX_MODULE -.->|"Serial → Parallel<br/>16-bit samples"| RX_RIGHT
+    
+    PASS_LOGIC -.->|"Direct copy<br/>when rx_ready=1"| TX_LEFT
+    PASS_LOGIC -.->|"Direct copy<br/>when rx_ready=1"| TX_RIGHT
+    
+    TX_MODULE -.->|"Parallel → Serial<br/>MSB first"| TX_SERIAL
+    TX_MODULE -.->|"WS falling edge<br/>request trigger"| SAMPLE_REQ
+
+    %% Clock Domain Annotations
+    MCLK_INT -.->|"12.288MHz Domain<br/>Passthrough Logic"| PASS_LOGIC
+    BCLK_INT -.->|"1.536MHz Domain<br/>I2S TX/RX"| RX_MODULE
+    BCLK_INT -.->|"1.536MHz Domain<br/>I2S TX/RX"| TX_MODULE
+
+    %% Styling
+    classDef externalStyle fill:#e1f5fe,stroke:#01579b,stroke-width:3px,color:#000
+    classDef pllStyle fill:#fff3e0,stroke:#e65100,stroke-width:2px,color:#000
+    classDef resetStyle fill:#f3e5f5,stroke:#4a148c,stroke-width:2px,color:#000
+    classDef clockStyle fill:#e8f5e8,stroke:#1b5e20,stroke-width:2px,color:#000
+    classDef rxStyle fill:#ffebee,stroke:#c62828,stroke-width:2px,color:#000
+    classDef processStyle fill:#e3f2fd,stroke:#0d47a1,stroke-width:2px,color:#000
+    classDef txStyle fill:#fce4ec,stroke:#880e4f,stroke-width:2px,color:#000
+    classDef statusStyle fill:#f1f8e9,stroke:#33691e,stroke-width:2px,color:#000
+
+    class CLK50,RST_IN,I2S_DIN,I2S_MCLK,I2S_BCLK,I2S_WS,I2S_DOUT,LEDS,TEST1,TEST2 externalStyle
+    class PLL,PLL_RST,PLL_LOCK,MCLK_INT pllStyle
+    class SYS_RST,HEARTBEAT resetStyle
+    class I2S_CLKS,BCLK_INT,WS_INT clockStyle
+    class RX_MODULE,RX_LEFT,RX_RIGHT,RX_READY rxStyle
+    class PASS_LOGIC,TX_LEFT,TX_RIGHT,TX_READY processStyle
+    class TX_MODULE,SAMPLE_REQ,TX_SERIAL txStyle
+    class LED_LOGIC,TEST_LOGIC statusStyle
