@@ -114,7 +114,7 @@ begin
   -- rx_ready pulses high when RX completes both left and right channels
   -- Verify that the captured parallel words match the stimulus.
   -- from vhdl_testbenches.pdf, p. 14
-  checker : process
+  frame_checker : process
     variable sample_count : integer := 0;
   begin
     loop
@@ -136,6 +136,38 @@ begin
       end if;
     end loop;
     wait; -- Process ends cleanly
+  end process;
+
+  -- Stability check: SD must not change on rising edge
+  bit_stability : process
+      variable prev_sd : std_logic;
+  begin
+      loop
+          wait until rising_edge(i2s_bclk);
+          prev_sd := i2s_sd;
+          wait for 1 ns; -- delta cycle to catch glitch
+          assert i2s_sd = prev_sd
+            report "SD changed on rising edge (should be stable)"
+            severity error;
+      end loop;
+  end process;
+
+  -- Word length check: exactly 16 bits per channel
+  word_length : process
+      variable bit_count : integer := 0;
+      variable prev_ws   : std_logic := '0';
+  begin
+      loop
+          wait until rising_edge(i2s_bclk);
+          bit_count := bit_count + 1;
+          if i2s_ws /= prev_ws then
+              assert bit_count = 16
+                report "Expected 16 bits, got " & integer'image(bit_count)
+                severity error;
+              bit_count := 0;
+              prev_ws   := i2s_ws;
+          end if;
+      end loop;
   end process;
 
   -- End-of-sim timeout, does not stop continuous processes (clocks) but does stop sequential processes
