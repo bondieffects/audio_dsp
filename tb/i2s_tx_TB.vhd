@@ -123,17 +123,16 @@ begin
     end process;
 
     -- I2S Serial Data Receiver/Checker Process
-    -- This matches the transmitter exactly:
     -- 1. WS changes on falling edge
-    -- 2. MSB appears immediately on that same falling edge
-    -- 3. Subsequent bits appear on following falling edges
+    -- 2. MSB appears one BCLK period after WS changes
+    -- 3. Data is valid on the rising edge of BCLK (receivers sample on rising edge)
     i2s_checker : process
         variable bit_count : integer := 0;
         variable left_shift_reg : std_logic_vector(15 downto 0) := (others => '0');
         variable right_shift_reg : std_logic_vector(15 downto 0) := (others => '0');
         variable channel_state : string(1 to 4) := "IDLE";
     begin
-        -- Initialize signals
+        -- Initialise signals
         received_left <= (others => '0');
         received_right <= (others => '0');
 
@@ -149,19 +148,21 @@ begin
         -- “Data is valid on the rising edge of SCK; the transmitter changes the data on the falling edge.”
         loop
 
-            wait until falling_edge(i2s_bclk);
+            wait until rising_edge(i2s_bclk);
 
             case channel_state is
                 when "IDLE" =>
                     if i2s_ws = '0' then
-                        -- Start LEFT channel - MSB is available immediately
+                        -- Start LEFT channel - Wait one BCLK period after WS changes before sampling MSB
+                        wait until rising_edge(i2s_bclk);
                         channel_state := "LEFT";
                         bit_count := 1;
                         left_shift_reg := (others => '0');
                         left_shift_reg := left_shift_reg(14 downto 0) & i2s_sdata;  -- Standard shift register
                         report "Starting LEFT channel (WS=0)" severity note;
                     elsif i2s_ws = '1' then
-                        -- Start RIGHT channel - MSB is available immediately  
+                        -- Start RIGHT channel - Wait one BCLK period after WS changes before sampling MSB
+                        wait until rising_edge(i2s_bclk);
                         channel_state := "RGHT";
                         bit_count := 1;
                         right_shift_reg := (others => '0');
@@ -171,7 +172,8 @@ begin
 
                 when "LEFT" =>
                     if bit_count < 16 then
-                        -- Continue collecting bits - standard MSB-first shift register
+                        -- Continue collecting bits
+                        wait until rising_edge(i2s_bclk);
                         left_shift_reg := left_shift_reg(14 downto 0) & i2s_sdata;
                         bit_count := bit_count + 1;
 
@@ -187,7 +189,8 @@ begin
 
                 when "RGHT" =>
                     if bit_count < 16 then
-                        -- Continue collecting bits - standard MSB-first shift register
+                        -- Continue collecting bits
+                        wait until rising_edge(i2s_bclk);
                         right_shift_reg := right_shift_reg(14 downto 0) & i2s_sdata;
                         bit_count := bit_count + 1;
 
