@@ -110,10 +110,10 @@ architecture rtl of audio_dsp_top is
 begin
 
     -- ========================================================================
-    -- RESET LOGIC
+    -- SIMPLIFIED RESET - IGNORE PLL DEPENDENCY  
     -- ========================================================================
-    pll_areset   <= not reset_n;
-    system_reset <= reset_n and pll_locked;  -- System ready when PLL locked
+    pll_areset   <= '0';                -- Don't reset PLL
+    system_reset <= reset_n;            -- Simple: just use reset button
 
     -- ========================================================================
     -- AUDIO PLL INSTANTIATION  
@@ -152,27 +152,24 @@ begin
         );
 
     -- ========================================================================
-    -- SIMPLE PASSTHROUGH LOGIC
+    -- AUDIO PASSTHROUGH LOGIC
     -- ========================================================================
-    -- Direct passthrough: RX data -> TX data
-    process(mclk_12288, system_reset)
+    -- Capture RX samples and keep them stable for the transmitter
+    process(bclk_int, system_reset)
     begin
         if system_reset = '0' then
             tx_left  <= (others => '0');
             tx_right <= (others => '0');
-            tx_ready <= '0';
-        elsif rising_edge(mclk_12288) then
-            -- When RX has new data, pass it to TX
+        elsif rising_edge(bclk_int) then
             if rx_ready = '1' then
                 tx_left  <= rx_left;
                 tx_right <= rx_right;
-                tx_ready <= '1';
-            -- Keep tx_ready high when sample is requested
-            elsif sample_request = '1' then
-                tx_ready <= '1';
             end if;
         end if;
     end process;
+
+    -- Always indicate that data is ready (latched samples remain valid)
+    tx_ready <= '1';
 
     -- ========================================================================
     -- I2S TRANSMITTER MODULE
@@ -188,6 +185,8 @@ begin
             i2s_sdata      => i2s_dout,
             sample_request => sample_request
         );
+
+
 
     -- ========================================================================
     -- HEARTBEAT AND STATUS
@@ -209,14 +208,14 @@ begin
     i2s_bclk <= bclk_int;
     i2s_ws   <= ws_int;
     
-    -- Status LEDs (active low)
-    led(0) <= not heartbeat(23);        -- Heartbeat blink
-    led(1) <= not pll_locked;           -- PLL status
-    led(2) <= not system_reset;         -- System ready
-    led(3) <= not rx_ready;             -- RX data available
+    -- Status LEDs (active low) - DEBUG VERSION
+    led(0) <= not heartbeat(23);        -- Heartbeat blink (MCLK/50MHz working)
+    led(1) <= not pll_locked;           -- PLL status (ON = not locked)
+    led(2) <= not system_reset;         -- System ready (ON = not ready)
+    led(3) <= pll_areset;               -- Show PLL reset status (ON = PLL being reset)
     
     -- Test points for debugging
     test_point_1 <= ws_int;             -- Show word select signal
-    test_point_2 <= sample_request;     -- Show sample request signal
+    test_point_2 <= rx_ready;           -- Show RX sample availability pulses
 
 end architecture rtl;

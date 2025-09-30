@@ -36,6 +36,10 @@ architecture rtl of i2s_clocks is
     -- OUTPUT CLOCK SIGNALS
     signal bclk_signal : std_logic := '0';
     signal ws_signal : std_logic := '0';
+    
+    -- BCLK edge detection for WS counting
+    signal bclk_prev : std_logic := '0';
+    signal bclk_edge : std_logic := '0';
 
 begin
 
@@ -46,25 +50,48 @@ begin
     begin
         if reset_n = '0' then
             bclk_counter <= "000";
-            bclk_signal <= '0';                 -- Start with BCLK low
+            bclk_signal <= '0';
         elsif rising_edge(i2s_mclk) then
-            bclk_counter <= bclk_counter + 1;
-            bclk_signal <= bclk_counter(2);     -- When we get to bit 2, toggle BCLK high
+            if bclk_counter = "011" then  -- Count 0,1,2,3
+                bclk_signal <= not bclk_signal;
+                bclk_counter <= "000";
+            else
+                bclk_counter <= bclk_counter + 1;
+            end if;
         end if;
     end process;
 
     -- ========================================================================
-    -- WS GENERATION: Divide 12.288MHz by 256 to get 48kHz
+    -- BCLK EDGE DETECTION
     -- ========================================================================
-    -- WS = 0 for left channel (counts 0-127), WS = 1 for right channel (counts 128-255)
+    process (i2s_mclk, reset_n)
+    begin
+        if reset_n = '0' then
+            bclk_prev <= '0';
+            bclk_edge <= '0';
+        elsif rising_edge(i2s_mclk) then
+            bclk_prev <= bclk_signal;
+            -- Detect rising edge of BCLK
+            bclk_edge <= bclk_signal and not bclk_prev;
+        end if;
+    end process;
+
+    -- ========================================================================
+    -- WS GENERATION: Count 32 BCLK cycles to get 48kHz
+    -- ========================================================================
+    -- For 16-bit I2S: 16 BCLK cycles per channel, 32 total per sample period
+    -- WS = 0 for left channel (counts 0-15), WS = 1 for right channel (counts 16-31)
     process (i2s_mclk, reset_n)
     begin
         if reset_n = '0' then
             ws_counter <= "00000000";
-            ws_signal <= '0';             -- Start with left channel (WS=0)
+            ws_signal <= '0';
         elsif rising_edge(i2s_mclk) then
-            ws_counter <= ws_counter + 1; -- increment counter
-            ws_signal <= ws_counter(7);   -- when we get to bit 7, switch to right channel (WS=1)
+            if bclk_edge = '1' then  -- Count on BCLK rising edges
+                ws_counter <= ws_counter + 1;
+                -- Counter automatically wraps from 255 back to 0 (8-bit counter)
+            end if;
+            ws_signal <= ws_counter(4);  -- Toggle at bit 4 for 32 BCLK cycles per frame
         end if;
     end process;
 
