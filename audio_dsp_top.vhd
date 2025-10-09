@@ -79,6 +79,20 @@ architecture rtl of audio_dsp_top is
         );
     end component;
 
+    component seven_seg is
+        port(
+            seg_mclk : in  std_logic;
+            reset_n  : in  std_logic;
+            data0    : in  std_logic_vector(3 downto 0);
+            data1    : in  std_logic_vector(3 downto 0);
+            data2    : in  std_logic_vector(3 downto 0);
+            data3    : in  std_logic_vector(3 downto 0);
+            
+            seg      : out std_logic_vector(7 downto 0);   -- Segments
+            seg_sel  : out std_logic_vector(3 downto 0)    -- Digit select
+        );
+    end component
+
     -- ========================================================================
     -- INTERNAL SIGNALS
     -- ========================================================================
