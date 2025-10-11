@@ -24,10 +24,16 @@ entity audio_dsp_top is
 
         -- Status LEDs
         led       : out std_logic_vector(3 downto 0);   -- PIN_84 to 87
+		  
+		  -- Seven Segments
+		  segment      : out std_logic_vector(7 downto 0);    -- PIN_{128,121,125,129,132,126,124,127}
+        seg_select   : out std_logic_vector(3 downto 0);    -- PIN_{133,135,136,137}
 
         -- Test points for debugging (optional - can be removed)
         test_point_1 : out std_logic; -- PIN_50
         test_point_2 : out std_logic  -- PIN_51
+		  
+		  
     );
 end entity audio_dsp_top;
 
@@ -91,7 +97,7 @@ architecture rtl of audio_dsp_top is
             seg      : out std_logic_vector(7 downto 0);   -- Segments
             seg_sel  : out std_logic_vector(3 downto 0)    -- Digit select
         );
-    end component
+    end component;
 
     -- ========================================================================
     -- INTERNAL SIGNALS
@@ -199,6 +205,21 @@ begin
             i2s_sdata      => i2s_dout,
             sample_request => sample_request
         );
+		  
+    -- ========================================================================
+    -- SEVEN SEGMENT
+    -- ========================================================================		  
+	 u_seven_seg : seven_seg
+		 port map (
+		      seg_mclk => clk_50mhz,
+            reset_n  => system_reset,
+            data0    => "1010", -- test value
+            data1    => "1011", 
+            data2    => "1100",
+            data3    => "1100",
+            seg      => segment,
+            seg_sel  => seg_select
+		 );
 
 
 
@@ -221,6 +242,7 @@ begin
     i2s_mclk <= mclk_12288;
     i2s_bclk <= bclk_int;
     i2s_ws   <= ws_int;
+
     
     -- Status LEDs (active low) - DEBUG VERSION
     led(0) <= not heartbeat(23);        -- Heartbeat blink (MCLK/50MHz working)

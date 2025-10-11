@@ -65,10 +65,10 @@ begin
 --                when "01" => digit_active <= "1101";
 --                when "00" => digit_active <= "1010";
 --                when "11" => digit_active <= "1011";
-                when "00" => digit_active <= digit_0_data;
-                when "01" => digit_active <= digit_1_data;
-                when "10" => digit_active <= digit_2_data;
-                when "11" => digit_active <= digit_3_data;
+                when "00" => digit_active <= data2;
+                when "01" => digit_active <= data1;
+                when "10" => digit_active <= data0;
+                when "11" => digit_active <= data3;
                 when others => null;
             end case;
         end if;
