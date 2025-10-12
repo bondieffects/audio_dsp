@@ -24,7 +24,7 @@ flowchart TB
     end
 
     subgraph reset_logic ["Reset & System Control"]
-        SYS_RST["system_reset<br/>reset_n AND pll_locked<br/>System Ready Signal"]
+        SYS_RST["reset_mclk_n<br/>reset_n AND pll_locked<br/>MCLK Domain Reset"]
         HEARTBEAT["heartbeat[23:0]<br/>24-bit Counter<br/>Status Indicator"]
     end
 
