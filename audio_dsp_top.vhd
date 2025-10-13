@@ -24,16 +24,16 @@ entity audio_dsp_top is
 
         -- Status LEDs
         led       : out std_logic_vector(3 downto 0);   -- PIN_84 to 87
-		  
-		  -- Seven Segments
-		  segment      : out std_logic_vector(7 downto 0);    -- PIN_{128,121,125,129,132,126,124,127}
+
+		-- Seven Segments
+		segment      : out std_logic_vector(7 downto 0);    -- PIN_{128,121,125,129,132,126,124,127}
         seg_select   : out std_logic_vector(3 downto 0);    -- PIN_{133,135,136,137}
 
         -- Test points for debugging (optional - can be removed)
         test_point_1 : out std_logic; -- PIN_50
         test_point_2 : out std_logic  -- PIN_51
-		  
-		  
+
+
     );
 end entity audio_dsp_top;
 
@@ -132,8 +132,8 @@ architecture rtl of audio_dsp_top is
     signal decimated_right: std_logic_vector(15 downto 0) := (others => '0');
 
     -- Bitcrusher control
-    constant BIT_DEPTH_TARGET : integer range 1 to 16 := 2; -- adjust to taste
-    constant DECIMATION_FACTOR : integer range 1 to 64 := 4; -- pick 1 for bypass
+    constant BIT_DEPTH_TARGET : integer range 1 to 16 := 3; -- adjust to taste
+    constant DECIMATION_FACTOR : integer range 1 to 64 := 2; -- pick 1 for bypass
 
     -- Seven-segment display control
     constant DISPLAY_TOGGLE_COUNT : unsigned(25 downto 0) := to_unsigned(50000000 - 1, 26);
@@ -343,8 +343,8 @@ begin
             tens_value := DECIMATION_FACTOR / 10;
             ones_value := DECIMATION_FACTOR mod 10;
 
-            display_char0 <= 'S';
-            display_char1 <= 'd';
+            display_char0 <= 'd';
+            display_char1 <= 'F';
             display_dot1  <= '1';
             if DECIMATION_FACTOR >= 10 then
                 display_char2 <= digit_char(tens_value);
