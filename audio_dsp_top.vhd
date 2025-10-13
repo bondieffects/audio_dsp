@@ -89,11 +89,15 @@ architecture rtl of audio_dsp_top is
         port(
             seg_mclk : in  std_logic;
             reset_n  : in  std_logic;
-            data0    : in  std_logic_vector(3 downto 0);
-            data1    : in  std_logic_vector(3 downto 0);
-            data2    : in  std_logic_vector(3 downto 0);
-            data3    : in  std_logic_vector(3 downto 0);
-            
+            data0    : in  character;
+            dot0     : in  std_logic;
+            data1    : in  character;
+            dot1     : in  std_logic;
+            data2    : in  character;
+            dot2     : in  std_logic;
+            data3    : in  character;
+            dot3     : in  std_logic;
+
             seg      : out std_logic_vector(7 downto 0);   -- Segments
             seg_sel  : out std_logic_vector(3 downto 0)    -- Digit select
         );
@@ -119,12 +123,47 @@ architecture rtl of audio_dsp_top is
     signal sample_request : std_logic;
     
     -- Passthrough data (RX -> TX)
-    signal tx_left      : std_logic_vector(15 downto 0) := (others => '0');
-    signal tx_right     : std_logic_vector(15 downto 0) := (others => '0');
-    signal tx_ready     : std_logic := '0';
+    signal tx_left        : std_logic_vector(15 downto 0) := (others => '0');
+    signal tx_right       : std_logic_vector(15 downto 0) := (others => '0');
+    signal tx_ready       : std_logic := '0';
+    signal crushed_left   : std_logic_vector(15 downto 0) := (others => '0');
+    signal crushed_right  : std_logic_vector(15 downto 0) := (others => '0');
+    signal decimated_left : std_logic_vector(15 downto 0) := (others => '0');
+    signal decimated_right: std_logic_vector(15 downto 0) := (others => '0');
+
+    -- Bitcrusher control
+    constant BIT_DEPTH_TARGET : integer range 1 to 16 := 2; -- adjust to taste
+    constant DECIMATION_FACTOR : integer range 1 to 64 := 4; -- pick 1 for bypass
+
+    -- Seven-segment display control
+    constant DISPLAY_TOGGLE_COUNT : unsigned(25 downto 0) := to_unsigned(50000000 - 1, 26);
+    signal display_counter : unsigned(25 downto 0) := (others => '0');
+    signal display_page    : std_logic := '0';
+    signal display_char0   : character := ' ';
+    signal display_char1   : character := ' ';
+    signal display_char2   : character := ' ';
+    signal display_char3   : character := ' ';
+    signal display_dot0    : std_logic := '0';
+    signal display_dot1    : std_logic := '0';
+    signal display_dot2    : std_logic := '0';
+    signal display_dot3    : std_logic := '0';
     
     -- Status
     signal heartbeat    : unsigned(23 downto 0) := (others => '0');
+
+    -- ====================================================================
+    -- HELPER FUNCTIONS
+    -- ====================================================================
+    function digit_char(value : integer) return character is
+        variable safe_value : integer := value;
+    begin
+        if safe_value < 0 then
+            safe_value := 0;
+        elsif safe_value > 9 then
+            safe_value := 9;
+        end if;
+        return character'val(character'pos('0') + safe_value);
+    end function;
 
 
 begin
@@ -172,8 +211,55 @@ begin
         );
 
     -- ========================================================================
-    -- AUDIO PASSTHROUGH LOGIC
+    -- AUDIO BITCRUSHER LOGIC
     -- ========================================================================
+    -- Quantize both channels before transmission
+    bitcrusher_left : entity work.bitcrusher_core
+        generic map (
+            IN_WIDTH    => 16,
+            TARGET_BITS => BIT_DEPTH_TARGET
+        )
+        port map (
+            sample_in  => rx_left,
+            sample_out => crushed_left
+        );
+
+    bitcrusher_right : entity work.bitcrusher_core
+        generic map (
+            IN_WIDTH    => 16,
+            TARGET_BITS => BIT_DEPTH_TARGET
+        )
+        port map (
+            sample_in  => rx_right,
+            sample_out => crushed_right
+        );
+
+    decimator_left : entity work.sample_rate_decimator
+        generic map (
+            IN_WIDTH          => 16,
+            DECIMATION_FACTOR => DECIMATION_FACTOR
+        )
+        port map (
+            clk          => bclk_int,
+            reset_n      => system_reset,
+            sample_in    => crushed_left,
+            sample_valid => rx_ready,
+            sample_out   => decimated_left
+        );
+
+    decimator_right : entity work.sample_rate_decimator
+        generic map (
+            IN_WIDTH          => 16,
+            DECIMATION_FACTOR => DECIMATION_FACTOR
+        )
+        port map (
+            clk          => bclk_int,
+            reset_n      => system_reset,
+            sample_in    => crushed_right,
+            sample_valid => rx_ready,
+            sample_out   => decimated_right
+        );
+
     -- Capture RX samples and keep them stable for the transmitter
     process(bclk_int, system_reset)
     begin
@@ -182,8 +268,8 @@ begin
             tx_right <= (others => '0');
         elsif rising_edge(bclk_int) then
             if rx_ready = '1' then
-                tx_left  <= rx_left;
-                tx_right <= rx_right;
+                tx_left  <= decimated_left;
+                tx_right <= decimated_right;
             end if;
         end if;
     end process;
@@ -209,17 +295,81 @@ begin
     -- ========================================================================
     -- SEVEN SEGMENT
     -- ========================================================================		  
-	 u_seven_seg : seven_seg
-		 port map (
-		      seg_mclk => clk_50mhz,
-            reset_n  => system_reset,
-            data0    => "1010", -- test value
-            data1    => "1011", 
-            data2    => "1100",
-            data3    => "1100",
-            seg      => segment,
-            seg_sel  => seg_select
-		 );
+    -- Toggle the display page every ~1 second (50 MHz clock)
+    process(clk_50mhz, system_reset)
+    begin
+        if system_reset = '0' then
+            display_counter <= (others => '0');
+            display_page    <= '0';
+        elsif rising_edge(clk_50mhz) then
+            if display_counter = DISPLAY_TOGGLE_COUNT then
+                display_counter <= (others => '0');
+                display_page    <= not display_page;
+            else
+                display_counter <= display_counter + 1;
+            end if;
+        end if;
+    end process;
+
+    -- Prepare the four-digit payload for the seven-seg driver
+    process(display_page)
+        variable tens_value : integer;
+        variable ones_value : integer;
+    begin
+        -- defaults
+        display_char0 <= ' ';
+        display_char1 <= ' ';
+        display_char2 <= ' ';
+        display_char3 <= ' ';
+        display_dot0  <= '0';
+        display_dot1  <= '0';
+        display_dot2  <= '0';
+        display_dot3  <= '0';
+
+        if display_page = '0' then
+            tens_value := BIT_DEPTH_TARGET / 10;
+            ones_value := BIT_DEPTH_TARGET mod 10;
+
+            display_char0 <= 'B';
+            display_char1 <= 'd';
+            display_dot1  <= '1';
+            if BIT_DEPTH_TARGET >= 10 then
+                display_char2 <= digit_char(tens_value);
+            else
+                display_char2 <= ' ';
+            end if;
+            display_char3 <= digit_char(ones_value);
+        else
+            tens_value := DECIMATION_FACTOR / 10;
+            ones_value := DECIMATION_FACTOR mod 10;
+
+            display_char0 <= 'S';
+            display_char1 <= 'd';
+            display_dot1  <= '1';
+            if DECIMATION_FACTOR >= 10 then
+                display_char2 <= digit_char(tens_value);
+            else
+                display_char2 <= ' ';
+            end if;
+            display_char3 <= digit_char(ones_value);
+        end if;
+    end process;
+
+    u_seven_seg : seven_seg
+        port map (
+            seg_mclk => clk_50mhz,
+          reset_n  => system_reset,
+            data0    => display_char0,
+            dot0     => display_dot0,
+            data1    => display_char1,
+            dot1     => display_dot1,
+            data2    => display_char2,
+            dot2     => display_dot2,
+            data3    => display_char3,
+            dot3     => display_dot3,
+          seg      => segment,
+          seg_sel  => seg_select
+        );
 
 
 
