@@ -111,7 +111,7 @@ begin
         );
 
     -- ========================================================================
-    -- CONNECT SIGNALS TO OUTPUTS
+    -- CONNECT SIGNALS TO OUTPUT PINS
     -- ========================================================================
     i2s_bclk <= bclk_signal;       -- Connect internal BCLK to output
     i2s_ws <= ws_signal;         -- Connect internal WS to output
