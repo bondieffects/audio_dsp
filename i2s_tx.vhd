@@ -58,52 +58,48 @@ begin
             right_data_reg <= (others => '0');
             bclk_count := 0;
             tx_data := (others => '0');
-            
+
         elsif falling_edge(i2s_bclk) then
-            -- Default: no sample request
+            -- Reset sample request each BCLK
             request_sample <= '0';
-            
-            -- Sample request on WS falling edge (start of new frame)
+
+            -- On WS falling edge (beginning of left channel)
             if ws_prev = '1' and i2s_ws = '0' then
-                request_sample <= '1';
+                request_sample <= '1';                              -- Assert request_sample
                 if tx_ready = '1' then
-                    left_data_reg <= audio_left;
-                    right_data_reg <= audio_right;
+                    left_data_reg <= audio_left;                    -- Load new left channel data
+                    right_data_reg <= audio_right;                  -- Load new right channel data
                 end if;
             end if;
-            
-            -- Detect WS changes and reset bit counter
+
+            -- If WS has changed, reset BCLK counter and load new data
             if ws_prev /= i2s_ws then
-                bclk_count := 0;  -- Reset counter on WS change
-                
-                -- Load appropriate data for the new channel
+
+                bclk_count := 0;                -- Reset counter on WS change
+
                 if i2s_ws = '0' then
-                    tx_data := left_data_reg;   -- Left channel
+                    tx_data := left_data_reg;   -- Load new left channel data
                 else
-                    tx_data := right_data_reg;  -- Right channel
-                end if;
+                    tx_data := right_data_reg;  -- Load new right channel data
             else
-                bclk_count := bclk_count + 1;  -- Increment counter
+                bclk_count := bclk_count + 1;   -- Increment bclk_count through the frame
             end if;
-            
+
             -- I2S Data Transmission
             if bclk_count = 0 then
-                -- First BCLK after WS change - output 0 (setup time)
-                i2s_sdata <= '0';
+                -- Delay one bclk after WS change (setup time)
+                i2s_sdata <= '0';                                   -- Data line low during setup
             elsif bclk_count >= 1 and bclk_count <= 16 then
-                -- Transmit 16 bits of data (MSB first)
-                i2s_sdata <= tx_data(16 - bclk_count);
+                i2s_sdata <= tx_data(16 - bclk_count);              -- Shift out data (MSB first)
             else
-                -- Outside data transmission period
-                i2s_sdata <= '0';
+                i2s_sdata <= '0';                                   -- Data line low when not transmitting
             end if;
-            
-            -- Update WS history
+
+            -- Store the previous WS state
             ws_prev <= i2s_ws;
         end if;
     end process;
-    
-    -- Connect sample request output
-    sample_request <= request_sample;
+
+    sample_request <= request_sample;   -- Generate a 1-cycle pulse to request new samples
 
 end architecture rtl;
