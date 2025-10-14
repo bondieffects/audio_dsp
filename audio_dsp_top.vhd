@@ -116,22 +116,20 @@ architecture rtl of audio_dsp_top is
     signal bclk_int     : std_logic;
     signal ws_int       : std_logic;
     
-    -- Audio data signals
+    -- Audio signals
     signal rx_left      : std_logic_vector(15 downto 0);
     signal rx_right     : std_logic_vector(15 downto 0);
     signal rx_ready     : std_logic;
     signal sample_request : std_logic;
-    
-    -- Passthrough data (RX -> TX)
     signal tx_left        : std_logic_vector(15 downto 0) := (others => '0');
     signal tx_right       : std_logic_vector(15 downto 0) := (others => '0');
     signal tx_ready       : std_logic := '0';
+
+    -- Bitcrusher
     signal crushed_left   : std_logic_vector(15 downto 0) := (others => '0');
     signal crushed_right  : std_logic_vector(15 downto 0) := (others => '0');
     signal decimated_left : std_logic_vector(15 downto 0) := (others => '0');
     signal decimated_right: std_logic_vector(15 downto 0) := (others => '0');
-
-    -- Bitcrusher control
     constant BIT_DEPTH_TARGET : integer range 1 to 16 := 3; -- adjust to taste
     constant DECIMATION_FACTOR : integer range 1 to 64 := 2; -- pick 1 for bypass
 
@@ -169,13 +167,13 @@ architecture rtl of audio_dsp_top is
 begin
 
     -- ========================================================================
-    -- SIMPLIFIED RESET - IGNORE PLL DEPENDENCY  
+    -- RESET
     -- ========================================================================
     pll_areset   <= '0';                -- Don't reset PLL
     system_reset <= reset_n;            -- Simple: just use reset button
 
     -- ========================================================================
-    -- AUDIO PLL INSTANTIATION  
+    -- AUDIO PLL INSTANTIATION
     -- ========================================================================
     u_audio_pll : audio_pll
         port map (
@@ -260,7 +258,7 @@ begin
             sample_out   => decimated_right
         );
 
-    -- Capture RX samples and keep them stable for the transmitter
+    -- Buffer processed samples for transmission
     process(bclk_int, system_reset)
     begin
         if system_reset = '0' then
@@ -326,6 +324,7 @@ begin
         display_dot2  <= '0';
         display_dot3  <= '0';
 
+        -- Display the bitdepth on the first page
         if display_page = '0' then
             tens_value := BIT_DEPTH_TARGET / 10;
             ones_value := BIT_DEPTH_TARGET mod 10;
@@ -339,6 +338,7 @@ begin
                 display_char2 <= ' ';
             end if;
             display_char3 <= digit_char(ones_value);
+        -- Display the decimation factor on the second page
         else
             tens_value := DECIMATION_FACTOR / 10;
             ones_value := DECIMATION_FACTOR mod 10;
