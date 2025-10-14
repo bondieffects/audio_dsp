@@ -85,66 +85,67 @@ begin
             valid_output <= '0';
 
         elsif rising_edge(i2s_bclk) then
-            valid_output <= '0';  -- Default state, will be set to '1' when both channels complete
+            valid_output <= '0';  -- Reset valid_output, set when both channels received
 
             case rx_state is
                 when IDLE =>
                     -- Check for WS transitions to start receiving
                     if ws_falling_edge = '1' then
-                        -- WS goes low: start receiving left channel
+                        -- WS '0' left channel
                         bit_counter <= "00000";
                         rx_shift_register <= (others => '0');
                         rx_state <= LEFT_CHANNEL;
                     elsif ws_rising_edge = '1' then
-                        -- WS goes high: start receiving right channel
+                        -- WS '1' right channel
                         bit_counter <= "00000";
                         rx_shift_register <= (others => '0');
                         rx_state <= RIGHT_CHANNEL;
                     end if;
 
                 when LEFT_CHANNEL =>
-                    -- Shift in data bit by bit
+                    -- Shift in data
                     rx_shift_register <= rx_shift_register(14 downto 0) & i2s_sdata;
                     bit_counter <= bit_counter + 1;
 
-                    -- After 16 bits, save left channel and check for channel change
+                    -- After 16 bits, store left channel and check for WS change
                     if bit_counter = "01111" then
                         left_sample <= rx_shift_register(14 downto 0) & i2s_sdata;
-                        -- Check if we should continue or switch channels
+
+                        -- The next bit should be the start of the right channel
                         if ws_rising_edge = '1' then
-                            -- WS went high during reception, switch to right
                             bit_counter <= "00000";
                             rx_shift_register <= (others => '0');
                             rx_state <= RIGHT_CHANNEL;
                         end if;
+
+                    -- Check if WS changed prematurely
                     elsif ws_rising_edge = '1' then
-                        -- WS changed mid-reception, switch immediately
                         bit_counter <= "00000";
                         rx_shift_register <= (others => '0');
                         rx_state <= RIGHT_CHANNEL;
                     end if;
 
                 when RIGHT_CHANNEL =>
-                    -- Shift in data bit by bit
+                    -- Shift in data
                     rx_shift_register <= rx_shift_register(14 downto 0) & i2s_sdata;
                     bit_counter <= bit_counter + 1;
 
-                    -- After 16 bits, save right channel and mark data valid
+                    -- After 16 bits, store right channel and assert valid_output
                     if bit_counter = "01111" then
                         right_sample <= rx_shift_register(14 downto 0) & i2s_sdata;
-                        valid_output <= '1';  -- Both channels received, data is ready
-                        
-                        -- Check if we should continue or switch channels
+                        valid_output <= '1';  -- Both channels received, assert valid_output
+
+                        -- The next bit should be the start of the left channel
                         if ws_falling_edge = '1' then
-                            -- WS went low during reception, switch to left
                             bit_counter <= "00000";
                             rx_shift_register <= (others => '0');
                             rx_state <= LEFT_CHANNEL;
                         else
                             rx_state <= IDLE;
                         end if;
+
+                    -- Check if WS changed prematurely
                     elsif ws_falling_edge = '1' then
-                        -- WS changed mid-reception, switch immediately
                         bit_counter <= "00000";
                         rx_shift_register <= (others => '0');
                         rx_state <= LEFT_CHANNEL;
