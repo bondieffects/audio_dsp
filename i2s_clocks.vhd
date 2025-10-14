@@ -70,9 +70,8 @@ begin
             bclk_prev <= '0';
             bclk_edge <= '0';
         elsif rising_edge(i2s_mclk) then
-            bclk_prev <= bclk_signal;
-            -- Detect rising edge of BCLK
-            bclk_edge <= bclk_signal and not bclk_prev;
+            bclk_prev <= bclk_signal;                       -- store the previous BCLK state
+            bclk_edge <= bclk_signal and not bclk_prev;     -- Generates a 1 cycle pulse if bclk_signal is '1' and bclk_prev is '0'
         end if;
     end process;
 
@@ -87,8 +86,8 @@ begin
             ws_counter <= "00000000";
             ws_signal <= '0';
         elsif rising_edge(i2s_mclk) then
-            if bclk_edge = '1' then  -- Count on BCLK rising edges
-                ws_counter <= ws_counter + 1;
+            if bclk_edge = '1' then             -- on BCLK rising edges
+                ws_counter <= ws_counter + 1;   -- increment ws_counter
                 -- Counter automatically wraps from 255 back to 0 (8-bit counter)
             end if;
             ws_signal <= ws_counter(4);  -- Toggle at bit 4 for 32 BCLK cycles per frame
