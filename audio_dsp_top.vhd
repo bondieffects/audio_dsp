@@ -123,7 +123,6 @@ architecture rtl of audio_dsp_top is
     signal rx_left      : std_logic_vector(15 downto 0);
     signal rx_right     : std_logic_vector(15 downto 0);
     signal rx_ready     : std_logic;
-    signal sample_request : std_logic;
     signal tx_left        : std_logic_vector(15 downto 0) := (others => '0');
     signal tx_right       : std_logic_vector(15 downto 0) := (others => '0');
     signal tx_ready       : std_logic := '0';
@@ -137,15 +136,44 @@ architecture rtl of audio_dsp_top is
     constant DECIMATION_DEFAULT : integer := 2;
     signal bit_depth_setting    : unsigned(4 downto 0) := to_unsigned(BIT_DEPTH_DEFAULT, 5);
     signal decimation_setting   : unsigned(6 downto 0) := to_unsigned(DECIMATION_DEFAULT, 7);
+    signal bit_depth_raw        : unsigned(4 downto 0) := to_unsigned(BIT_DEPTH_DEFAULT, 5);
+    signal decimation_raw       : unsigned(6 downto 0) := to_unsigned(DECIMATION_DEFAULT, 7);
+    signal bit_depth_bclk       : unsigned(4 downto 0) := to_unsigned(BIT_DEPTH_DEFAULT, 5);
+    signal decimation_bclk      : unsigned(6 downto 0) := to_unsigned(DECIMATION_DEFAULT, 7);
+    signal midi_activity        : std_logic := '0';
 
     -- MIDI interface signals
     signal midi_byte   : std_logic_vector(7 downto 0) := (others => '0');
     signal midi_valid  : std_logic := '0';
+    signal cc_event_strobe : std_logic := '0';
+    signal cc_number_raw   : unsigned(6 downto 0) := (others => '0');
+    signal cc_value_raw    : unsigned(6 downto 0) := (others => '0');
+    signal pc_event_strobe : std_logic := '0';
+    signal pc_number_raw   : unsigned(6 downto 0) := (others => '0');
+
+    signal cc_number_latched : integer range 0 to 127 := 0;
+    signal cc_value_latched  : integer range 0 to 127 := 0;
+    signal pc_number_latched : integer range 0 to 127 := 0;
+    signal cc_number_next    : integer range 0 to 127 := 0;
+    signal cc_value_next     : integer range 0 to 127 := 0;
+    signal pc_number_next    : integer range 0 to 127 := 0;
 
     -- Seven-segment display control
-    constant DISPLAY_TOGGLE_COUNT : unsigned(25 downto 0) := to_unsigned(50000000 - 1, 26);
-    signal display_counter : unsigned(25 downto 0) := (others => '0');
-    signal display_page    : std_logic := '0';
+    type display_state_t is (
+        DISPLAY_BIT_DEPTH,
+        DISPLAY_DECIMATION,
+        DISPLAY_CC_HEADER,
+        DISPLAY_CC_NUMBER,
+        DISPLAY_CC_VALUE,
+        DISPLAY_PC_HEADER,
+        DISPLAY_PC_NUMBER
+    );
+
+    constant NORMAL_HOLD_COUNT : unsigned(25 downto 0) := to_unsigned(50000000 - 1, 26);
+    constant EVENT_HOLD_COUNT  : unsigned(25 downto 0) := to_unsigned(20000000 - 1, 26);
+
+    signal display_timer   : unsigned(25 downto 0) := NORMAL_HOLD_COUNT;
+    signal display_state   : display_state_t := DISPLAY_BIT_DEPTH;
     signal display_char0   : character := ' ';
     signal display_char1   : character := ' ';
     signal display_char2   : character := ' ';
@@ -171,6 +199,63 @@ architecture rtl of audio_dsp_top is
         end if;
         return character'val(character'pos('0') + safe_value);
     end function;
+
+    procedure split_digits(value_in : in integer; tens : out integer; ones : out integer) is
+        variable clamped_value : integer := value_in;
+        variable tens_local    : integer := 0;
+    begin
+        if clamped_value < 0 then
+            clamped_value := 0;
+        elsif clamped_value > 99 then
+            clamped_value := 99;
+        end if;
+
+        for idx in 0 to 9 loop
+            exit when clamped_value < 10;
+            clamped_value := clamped_value - 10;
+            tens_local    := tens_local + 1;
+        end loop;
+
+        tens := tens_local;
+        ones := clamped_value;
+    end procedure;
+
+    procedure format_number(value_in : in integer; hundreds : out character; tens : out character; ones : out character) is
+        variable clamped_value  : integer := value_in;
+        variable hundreds_value : integer := 0;
+        variable tens_value     : integer := 0;
+    begin
+        if clamped_value < 0 then
+            clamped_value := 0;
+        elsif clamped_value > 127 then
+            clamped_value := 127;
+        end if;
+
+        if clamped_value >= 100 then
+            hundreds_value := 1;
+            clamped_value  := clamped_value - 100;
+        end if;
+
+        for idx in 0 to 9 loop
+            exit when clamped_value < 10;
+            clamped_value := clamped_value - 10;
+            tens_value    := tens_value + 1;
+        end loop;
+
+        if hundreds_value = 0 then
+            hundreds := ' ';
+        else
+            hundreds := digit_char(hundreds_value);
+        end if;
+
+        if (hundreds_value = 0) and (tens_value = 0) then
+            tens := ' ';
+        else
+            tens := digit_char(tens_value);
+        end if;
+
+        ones := digit_char(clamped_value);
+    end procedure;
 
 
 begin
@@ -235,9 +320,54 @@ begin
             reset_n          => system_reset,
             data_byte        => midi_byte,
             data_valid       => midi_valid,
-            bit_depth_value  => bit_depth_setting,
-            decimation_value => decimation_setting
+            bit_depth_value  => bit_depth_raw,
+            decimation_value => decimation_raw,
+            cc_event         => cc_event_strobe,
+            cc_number        => cc_number_raw,
+            cc_value_raw     => cc_value_raw,
+            pc_event         => pc_event_strobe,
+            pc_number        => pc_number_raw
         );
+
+    -- Register the MIDI-controlled parameters locally to keep this domain latch-free
+    process(clk_50mhz)
+    begin
+        if rising_edge(clk_50mhz) then
+            if system_reset = '0' then
+                bit_depth_setting  <= to_unsigned(BIT_DEPTH_DEFAULT, bit_depth_setting'length);
+                decimation_setting <= to_unsigned(DECIMATION_DEFAULT, decimation_setting'length);
+            else
+                bit_depth_setting  <= bit_depth_raw;
+                decimation_setting <= decimation_raw;
+            end if;
+        end if;
+    end process;
+
+    -- Cross the MIDI-controlled parameters into the I2S bit clock domain
+    process(bclk_int)
+    begin
+        if rising_edge(bclk_int) then
+            if system_reset = '0' then
+                bit_depth_bclk  <= to_unsigned(BIT_DEPTH_DEFAULT, bit_depth_bclk'length);
+                decimation_bclk <= to_unsigned(DECIMATION_DEFAULT, decimation_bclk'length);
+            else
+                bit_depth_bclk  <= bit_depth_setting;
+                decimation_bclk <= decimation_setting;
+            end if;
+        end if;
+    end process;
+
+    -- Track MIDI traffic so the activity LED does not sit at a constant level
+    process(clk_50mhz)
+    begin
+        if rising_edge(clk_50mhz) then
+            if system_reset = '0' then
+                midi_activity <= '0';
+            elsif midi_valid = '1' then
+                midi_activity <= not midi_activity;
+            end if;
+        end if;
+    end process;
 
     -- ========================================================================
     -- AUDIO BITCRUSHER LOGIC
@@ -249,7 +379,7 @@ begin
         )
         port map (
             sample_in  => rx_left,
-            bit_depth  => bit_depth_setting,
+            bit_depth  => bit_depth_bclk,
             sample_out => crushed_left
         );
 
@@ -259,7 +389,7 @@ begin
         )
         port map (
             sample_in  => rx_right,
-            bit_depth  => bit_depth_setting,
+            bit_depth  => bit_depth_bclk,
             sample_out => crushed_right
         );
 
@@ -273,7 +403,7 @@ begin
             reset_n      => system_reset,
             sample_in    => crushed_left,
             sample_valid => rx_ready,
-            decimation_factor => decimation_setting,
+            decimation_factor => decimation_bclk,
             sample_out   => decimated_left
         );
 
@@ -287,7 +417,7 @@ begin
             reset_n      => system_reset,
             sample_in    => crushed_right,
             sample_valid => rx_ready,
-            decimation_factor => decimation_setting,
+            decimation_factor => decimation_bclk,
             sample_out   => decimated_right
         );
 
@@ -320,33 +450,113 @@ begin
             audio_right    => tx_right,
             tx_ready       => tx_ready,
             i2s_sdata      => i2s_dout,
-            sample_request => sample_request
+            sample_request => open
         );
 		  
     -- ========================================================================
     -- SEVEN SEGMENT
     -- ========================================================================		  
-    -- Toggle the display page every ~1 second (50 MHz clock)
-    process(clk_50mhz, system_reset)
+    -- Manage automated page sequencing and event-driven animations
+    process(clk_50mhz)
+        variable next_state : display_state_t;
+        variable next_timer : unsigned(display_timer'range);
     begin
-        if system_reset = '0' then
-            display_counter <= (others => '0');
-            display_page    <= '0';
-        elsif rising_edge(clk_50mhz) then
-            if display_counter = DISPLAY_TOGGLE_COUNT then
-                display_counter <= (others => '0');
-                display_page    <= not display_page;
+        if rising_edge(clk_50mhz) then
+            if system_reset = '0' then
+                display_state <= DISPLAY_BIT_DEPTH;
+                display_timer <= NORMAL_HOLD_COUNT;
             else
-                display_counter <= display_counter + 1;
+                next_state := display_state;
+                next_timer := display_timer;
+
+                if cc_event_strobe = '1' then
+                    next_state := DISPLAY_CC_HEADER;
+                    next_timer := EVENT_HOLD_COUNT;
+                elsif pc_event_strobe = '1' then
+                    next_state := DISPLAY_PC_HEADER;
+                    next_timer := EVENT_HOLD_COUNT;
+                elsif next_timer = 0 then
+                    case next_state is
+                        when DISPLAY_BIT_DEPTH =>
+                            next_state := DISPLAY_DECIMATION;
+                            next_timer := NORMAL_HOLD_COUNT;
+                        when DISPLAY_DECIMATION =>
+                            next_state := DISPLAY_BIT_DEPTH;
+                            next_timer := NORMAL_HOLD_COUNT;
+                        when DISPLAY_CC_HEADER =>
+                            next_state := DISPLAY_CC_NUMBER;
+                            next_timer := EVENT_HOLD_COUNT;
+                        when DISPLAY_CC_NUMBER =>
+                            next_state := DISPLAY_CC_VALUE;
+                            next_timer := EVENT_HOLD_COUNT;
+                        when DISPLAY_CC_VALUE =>
+                            next_state := DISPLAY_BIT_DEPTH;
+                            next_timer := NORMAL_HOLD_COUNT;
+                        when DISPLAY_PC_HEADER =>
+                            next_state := DISPLAY_PC_NUMBER;
+                            next_timer := EVENT_HOLD_COUNT;
+                        when DISPLAY_PC_NUMBER =>
+                            next_state := DISPLAY_BIT_DEPTH;
+                            next_timer := NORMAL_HOLD_COUNT;
+                    end case;
+                else
+                    next_timer := next_timer - 1;
+                end if;
+
+                display_state <= next_state;
+                display_timer <= next_timer;
+            end if;
+        end if;
+    end process;
+
+    -- Next-value preparation for the CC and PC display latches
+    cc_number_next <= to_integer(cc_number_raw) when cc_event_strobe = '1' else cc_number_latched;
+    cc_value_next  <= to_integer(cc_value_raw)  when cc_event_strobe = '1' else cc_value_latched;
+    pc_number_next <= to_integer(pc_number_raw) when pc_event_strobe = '1' else pc_number_latched;
+
+    -- Latch the most recent CC number/value and PC number for display pages
+    process(clk_50mhz)
+    begin
+        if rising_edge(clk_50mhz) then
+            if system_reset = '0' then
+                cc_number_latched <= 0;
+            else
+                cc_number_latched <= cc_number_next;
+            end if;
+        end if;
+    end process;
+
+    process(clk_50mhz)
+    begin
+        if rising_edge(clk_50mhz) then
+            if system_reset = '0' then
+                cc_value_latched <= 0;
+            else
+                cc_value_latched <= cc_value_next;
+            end if;
+        end if;
+    end process;
+
+    process(clk_50mhz)
+    begin
+        if rising_edge(clk_50mhz) then
+            if system_reset = '0' then
+                pc_number_latched <= 0;
+            else
+                pc_number_latched <= pc_number_next;
             end if;
         end if;
     end process;
 
     -- Prepare the four-digit payload for the seven-seg driver
-    process(display_page, bit_depth_setting, decimation_setting)
-        variable value      : integer;
-        variable tens_value : integer;
-        variable ones_value : integer;
+    process(display_state, bit_depth_setting, decimation_setting,
+            cc_number_latched, cc_value_latched, pc_number_latched)
+        variable value          : integer;
+        variable tens_value     : integer;
+        variable ones_value     : integer;
+        variable hundreds_char  : character;
+        variable tens_char      : character;
+        variable ones_char      : character;
     begin
         -- defaults
         display_char0 <= ' ';
@@ -358,45 +568,70 @@ begin
         display_dot2  <= '0';
         display_dot3  <= '0';
 
-        if display_page = '0' then
-            value := to_integer(bit_depth_setting);
-            if value < 0 then
-                value := 0;
-            elsif value > 99 then
-                value := 99;
-            end if;
-            tens_value := value / 10;
-            ones_value := value mod 10;
+        case display_state is
+            when DISPLAY_BIT_DEPTH =>
+                value := to_integer(bit_depth_setting);
+                split_digits(value, tens_value, ones_value);
 
-            display_char0 <= 'B';
-            display_char1 <= 'd';
-            display_dot1  <= '1';
-            if value >= 10 then
-                display_char2 <= digit_char(tens_value);
-            else
-                display_char2 <= ' ';
-            end if;
-            display_char3 <= digit_char(ones_value);
-        else
-            value := to_integer(decimation_setting);
-            if value < 0 then
-                value := 0;
-            elsif value > 99 then
-                value := 99;
-            end if;
-            tens_value := value / 10;
-            ones_value := value mod 10;
+                display_char0 <= 'B';
+                display_char1 <= 'd';
+                display_dot1  <= '1';
+                if tens_value > 0 then
+                    display_char2 <= digit_char(tens_value);
+                else
+                    display_char2 <= ' ';
+                end if;
+                display_char3 <= digit_char(ones_value);
 
-            display_char0 <= 'd';
-            display_char1 <= 'F';
-            display_dot1  <= '1';
-            if value >= 10 then
-                display_char2 <= digit_char(tens_value);
-            else
-                display_char2 <= ' ';
-            end if;
-            display_char3 <= digit_char(ones_value);
-        end if;
+            when DISPLAY_DECIMATION =>
+                value := to_integer(decimation_setting);
+                split_digits(value, tens_value, ones_value);
+
+                display_char0 <= 'd';
+                display_char1 <= 'F';
+                display_dot1  <= '1';
+                if tens_value > 0 then
+                    display_char2 <= digit_char(tens_value);
+                else
+                    display_char2 <= ' ';
+                end if;
+                display_char3 <= digit_char(ones_value);
+
+            when DISPLAY_CC_HEADER =>
+                display_char0 <= 'C';
+                display_char1 <= 'C';
+
+            when DISPLAY_CC_NUMBER =>
+                value := cc_number_latched;
+                format_number(value, hundreds_char, tens_char, ones_char);
+
+                display_char0 <= 'N';
+                display_char1 <= hundreds_char;
+                display_char2 <= tens_char;
+                display_char3 <= ones_char;
+
+            when DISPLAY_CC_VALUE =>
+                value := cc_value_latched;
+                format_number(value, hundreds_char, tens_char, ones_char);
+
+                display_char0 <= 'V';
+                display_char1 <= hundreds_char;
+                display_char2 <= tens_char;
+                display_char3 <= ones_char;
+
+            when DISPLAY_PC_HEADER =>
+                display_char0 <= 'P';
+                display_char1 <= 'C';
+
+            when DISPLAY_PC_NUMBER =>
+                value := pc_number_latched;
+                format_number(value, hundreds_char, tens_char, ones_char);
+
+                display_char0 <= 'N';
+                display_char1 <= hundreds_char;
+                display_char2 <= tens_char;
+                display_char3 <= ones_char;
+        end case;
     end process;
 
     u_seven_seg : seven_seg
@@ -441,8 +676,8 @@ begin
     -- Status LEDs (active low) - DEBUG VERSION
     led(0) <= not heartbeat(23);        -- Heartbeat blink (MCLK/50MHz working)
     led(1) <= not pll_locked;           -- PLL status (ON = not locked)
-    led(2) <= not system_reset;         -- System ready (ON = not ready)
-    led(3) <= pll_areset;               -- Show PLL reset status (ON = PLL being reset)
+    led(2) <= not rx_ready;             -- Pulses when RX samples arrive
+    led(3) <= not midi_activity;        -- Toggles whenever MIDI data is parsed
     
     -- Test points for debugging
     test_point_1 <= ws_int;             -- Show word select signal

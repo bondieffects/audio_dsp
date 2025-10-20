@@ -23,6 +23,9 @@ architecture tb of midi_control_tb is
     signal crushed_sample   : std_logic_vector(15 downto 0);
     signal decimated_sample : std_logic_vector(15 downto 0);
 
+    constant SAMPLE_PASSTHROUGH : signed(15 downto 0) := to_signed(16#7A5C#, 16);
+    constant SAMPLE_QUANTIZE    : signed(15 downto 0) := to_signed(16#1234#, 16);
+
 begin
     -- Generate 50 MHz clock
     clk <= not clk after CLK_PERIOD / 2;
@@ -111,9 +114,9 @@ begin
             report "Decimation mapping for value 1 failed" severity error;
 
         -- Verify bitcrusher operates as passthrough when depth = 16
-        sample_in <= x"7A5C";
+        sample_in <= std_logic_vector(SAMPLE_PASSTHROUGH);
         wait for CLK_PERIOD;
-        assert crushed_sample = x"7A5C"
+        assert signed(crushed_sample) = SAMPLE_PASSTHROUGH
             report "Bitcrusher failed to passthrough at 16-bit depth" severity error;
 
         -- Reduce bit depth: CC #20 value 30 -> expect bit depth = 4
@@ -123,11 +126,16 @@ begin
         assert bit_depth_value = to_unsigned(4, bit_depth_value'length)
             report "Bit depth mapping for value 30 failed" severity error;
 
-        sample_in <= x"1234";
+    sample_in <= std_logic_vector(SAMPLE_QUANTIZE);
         wait for CLK_PERIOD;
-        expected_crushed := shift_left(shift_right(signed(x"1234"), 12), 12);
+    expected_crushed := shift_left(shift_right(SAMPLE_QUANTIZE, 12), 12);
         assert signed(crushed_sample) = expected_crushed
             report "Bitcrusher quantisation mismatch at 4-bit depth" severity error;
+
+        -- Restore full resolution so the decimator ramp can check pass-through behaviour
+        send_byte(std_logic_vector(to_unsigned(20, 8)));
+        send_byte(std_logic_vector(to_unsigned(127, 8)));
+        wait for 4 * CLK_PERIOD;
 
         -- Configure decimator for factor = 4 (CC #21 value 7)
         send_byte(std_logic_vector(to_unsigned(21, 8)));
@@ -154,8 +162,8 @@ begin
                 severity error;
         end loop;
 
-        assert false report "midi_control_tb completed successfully" severity note;
-        wait;
+    report "midi_control_tb completed successfully" severity note;
+    wait;
     end process;
 
 end architecture tb;

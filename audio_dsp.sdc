@@ -27,6 +27,12 @@ create_generated_clock -name {i2s_bclk_int} \
     -divide_by 8 \
     [get_registers {i2s_clocks:u_i2s_clocks|bclk_signal}]
 
+# Seven-segment multiplex clock (~500 Hz) derived from clk_50mhz
+create_generated_clock -name {seg_mux_clk} \
+    -source [get_ports {clk_50mhz}] \
+    -divide_by 100000 \
+    [get_registers {seven_seg:u_seven_seg|seg_clk[0]}]
+
 # ============================================================================
 # Clock Groups and Relationships
 # ============================================================================
@@ -35,7 +41,8 @@ create_generated_clock -name {i2s_bclk_int} \
 set_clock_groups -asynchronous \
     -group {clk_50mhz} \
     -group {u_audio_pll|altpll_component|auto_generated|pll1|clk[0]} \
-    -group {i2s_bclk_int virtual_bclk}
+    -group {i2s_bclk_int virtual_bclk} \
+    -group {seg_mux_clk}
 
 # ============================================================================
 # False Paths
