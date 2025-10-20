@@ -31,7 +31,10 @@ entity audio_dsp_top is
 
         -- Test points for debugging (optional - can be removed)
         test_point_1 : out std_logic; -- PIN_50
-        test_point_2 : out std_logic  -- PIN_51
+        test_point_2 : out std_logic; -- PIN_51
+
+        -- MIDI input
+        midi_in     : in  std_logic       -- External MIDI RX input
 
 
     );
@@ -126,12 +129,18 @@ architecture rtl of audio_dsp_top is
     signal tx_ready       : std_logic := '0';
 
     -- Bitcrusher
-    signal crushed_left   : std_logic_vector(15 downto 0) := (others => '0');
-    signal crushed_right  : std_logic_vector(15 downto 0) := (others => '0');
-    signal decimated_left : std_logic_vector(15 downto 0) := (others => '0');
-    signal decimated_right: std_logic_vector(15 downto 0) := (others => '0');
-    constant BIT_DEPTH_TARGET : integer range 1 to 16 := 3; -- adjust to taste
-    constant DECIMATION_FACTOR : integer range 1 to 64 := 2; -- pick 1 for bypass
+    signal crushed_left      : std_logic_vector(15 downto 0) := (others => '0');
+    signal crushed_right     : std_logic_vector(15 downto 0) := (others => '0');
+    signal decimated_left    : std_logic_vector(15 downto 0) := (others => '0');
+    signal decimated_right   : std_logic_vector(15 downto 0) := (others => '0');
+    constant BIT_DEPTH_DEFAULT  : integer := 3;
+    constant DECIMATION_DEFAULT : integer := 2;
+    signal bit_depth_setting    : unsigned(4 downto 0) := to_unsigned(BIT_DEPTH_DEFAULT, 5);
+    signal decimation_setting   : unsigned(6 downto 0) := to_unsigned(DECIMATION_DEFAULT, 7);
+
+    -- MIDI interface signals
+    signal midi_byte   : std_logic_vector(7 downto 0) := (others => '0');
+    signal midi_valid  : std_logic := '0';
 
     -- Seven-segment display control
     constant DISPLAY_TOGGLE_COUNT : unsigned(25 downto 0) := to_unsigned(50000000 - 1, 26);
@@ -209,52 +218,76 @@ begin
         );
 
     -- ========================================================================
+    -- MIDI CONTROL INTERFACE
+    -- ========================================================================
+    u_midi_rx : entity work.midi_uart_rx
+        port map (
+            clk        => clk_50mhz,
+            reset_n    => system_reset,
+            midi_in    => midi_in,
+            data_byte  => midi_byte,
+            data_valid => midi_valid
+        );
+
+    u_midi_parser : entity work.midi_parser
+        port map (
+            clk              => clk_50mhz,
+            reset_n          => system_reset,
+            data_byte        => midi_byte,
+            data_valid       => midi_valid,
+            bit_depth_value  => bit_depth_setting,
+            decimation_value => decimation_setting
+        );
+
+    -- ========================================================================
     -- AUDIO BITCRUSHER LOGIC
     -- ========================================================================
     -- Quantize both channels before transmission
-    bitcrusher_left : entity work.bitcrusher_core
+    bitcrusher_left : entity work.bitcrusher_dynamic
         generic map (
-            IN_WIDTH    => 16,
-            TARGET_BITS => BIT_DEPTH_TARGET
+            IN_WIDTH => 16
         )
         port map (
             sample_in  => rx_left,
+            bit_depth  => bit_depth_setting,
             sample_out => crushed_left
         );
 
-    bitcrusher_right : entity work.bitcrusher_core
+    bitcrusher_right : entity work.bitcrusher_dynamic
         generic map (
-            IN_WIDTH    => 16,
-            TARGET_BITS => BIT_DEPTH_TARGET
+            IN_WIDTH => 16
         )
         port map (
             sample_in  => rx_right,
+            bit_depth  => bit_depth_setting,
             sample_out => crushed_right
         );
 
-    decimator_left : entity work.sample_rate_decimator
+    decimator_left : entity work.sample_rate_decimator_dynamic
         generic map (
-            IN_WIDTH          => 16,
-            DECIMATION_FACTOR => DECIMATION_FACTOR
+            IN_WIDTH      => 16,
+            COUNTER_WIDTH => 6
         )
         port map (
             clk          => bclk_int,
             reset_n      => system_reset,
             sample_in    => crushed_left,
             sample_valid => rx_ready,
+            decimation_factor => decimation_setting,
             sample_out   => decimated_left
         );
 
-    decimator_right : entity work.sample_rate_decimator
+    decimator_right : entity work.sample_rate_decimator_dynamic
         generic map (
-            IN_WIDTH          => 16,
-            DECIMATION_FACTOR => DECIMATION_FACTOR
+            IN_WIDTH      => 16,
+            COUNTER_WIDTH => 6
         )
         port map (
             clk          => bclk_int,
             reset_n      => system_reset,
             sample_in    => crushed_right,
             sample_valid => rx_ready,
+            decimation_factor => decimation_setting,
             sample_out   => decimated_right
         );
 
@@ -310,7 +343,8 @@ begin
     end process;
 
     -- Prepare the four-digit payload for the seven-seg driver
-    process(display_page)
+    process(display_page, bit_depth_setting, decimation_setting)
+        variable value      : integer;
         variable tens_value : integer;
         variable ones_value : integer;
     begin
@@ -324,29 +358,39 @@ begin
         display_dot2  <= '0';
         display_dot3  <= '0';
 
-        -- Display the bitdepth on the first page
         if display_page = '0' then
-            tens_value := BIT_DEPTH_TARGET / 10;
-            ones_value := BIT_DEPTH_TARGET mod 10;
+            value := to_integer(bit_depth_setting);
+            if value < 0 then
+                value := 0;
+            elsif value > 99 then
+                value := 99;
+            end if;
+            tens_value := value / 10;
+            ones_value := value mod 10;
 
             display_char0 <= 'B';
             display_char1 <= 'd';
             display_dot1  <= '1';
-            if BIT_DEPTH_TARGET >= 10 then
+            if value >= 10 then
                 display_char2 <= digit_char(tens_value);
             else
                 display_char2 <= ' ';
             end if;
             display_char3 <= digit_char(ones_value);
-        -- Display the decimation factor on the second page
         else
-            tens_value := DECIMATION_FACTOR / 10;
-            ones_value := DECIMATION_FACTOR mod 10;
+            value := to_integer(decimation_setting);
+            if value < 0 then
+                value := 0;
+            elsif value > 99 then
+                value := 99;
+            end if;
+            tens_value := value / 10;
+            ones_value := value mod 10;
 
             display_char0 <= 'd';
             display_char1 <= 'F';
             display_dot1  <= '1';
-            if DECIMATION_FACTOR >= 10 then
+            if value >= 10 then
                 display_char2 <= digit_char(tens_value);
             else
                 display_char2 <= ' ';
