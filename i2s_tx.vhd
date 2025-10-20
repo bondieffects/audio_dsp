@@ -74,13 +74,12 @@ begin
 
             -- If WS has changed, reset BCLK counter and load new data
             if ws_prev /= i2s_ws then
-
                 bclk_count := 0;                -- Reset counter on WS change
-
                 if i2s_ws = '0' then
                     tx_data := left_data_reg;   -- Load new left channel data
                 else
                     tx_data := right_data_reg;  -- Load new right channel data
+                end if;
             else
                 bclk_count := bclk_count + 1;   -- Increment bclk_count through the frame
             end if;
