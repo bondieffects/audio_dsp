@@ -9,7 +9,7 @@ use IEEE.numeric_std.all;
 --      1. Convert the internal parallel audio data to I2S serial format
 --      2. Serial multiplex the left and right channel data
 
-entity i2s_tx is 
+entity i2s_tx is
     port (
         -- Clocks and Reset
         i2s_bclk : in std_logic;
@@ -31,11 +31,11 @@ architecture rtl of i2s_tx is
     -- I2S Transmitter signals
     signal ws_prev : std_logic := '0';
     signal request_sample : std_logic := '0';
-    
+
     -- Data storage
     signal left_data_reg : std_logic_vector(15 downto 0) := (others => '0');
     signal right_data_reg : std_logic_vector(15 downto 0) := (others => '0');
-    
+
     -- Transmission control
     signal bit_count : integer range 0 to 16 := 0;
     signal transmitting : std_logic := '0';
