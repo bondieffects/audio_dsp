@@ -41,7 +41,7 @@ begin
             decimation_value => decimation_value
         );
 
-    u_bitcrusher : entity work.bitcrusher_dynamic
+    u_bitcrusher : entity work.bitcrusher
         generic map (
             IN_WIDTH => 16
         )
@@ -51,7 +51,7 @@ begin
             sample_out => crushed_sample
         );
 
-    u_decimator : entity work.sample_rate_decimator_dynamic
+    u_decimator : entity work.sample_rate_decimator
         generic map (
             IN_WIDTH      => 16,
             COUNTER_WIDTH => 6

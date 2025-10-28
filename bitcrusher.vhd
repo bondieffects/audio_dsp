@@ -8,7 +8,7 @@ use IEEE.numeric_std.all;
 -- Quantises the input sample to the number of bits specified on 'bit_depth'.
 -- bit_depth values outside the range 1..IN_WIDTH are clamped.
 -- ============================================================================
-entity bitcrusher_dynamic is
+entity bitcrusher is
     generic (
         IN_WIDTH : integer := 16
     );
@@ -17,9 +17,9 @@ entity bitcrusher_dynamic is
         bit_depth  : in  unsigned(4 downto 0);  -- supports up to 31 bits, clamp to IN_WIDTH
         sample_out : out std_logic_vector(IN_WIDTH - 1 downto 0)
     );
-end entity bitcrusher_dynamic;
+end entity bitcrusher;
 
-architecture rtl of bitcrusher_dynamic is
+architecture rtl of bitcrusher is
 begin
     process(sample_in, bit_depth)
         variable working_sample : signed(IN_WIDTH - 1 downto 0);

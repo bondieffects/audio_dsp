@@ -371,7 +371,7 @@ begin
     -- AUDIO BITCRUSHER LOGIC
     -- ========================================================================
     -- Quantize both channels before transmission
-    bitcrusher_left : entity work.bitcrusher_dynamic
+    bitcrusher_left : entity work.bitcrusher
         generic map (
             IN_WIDTH => 16
         )
@@ -381,7 +381,7 @@ begin
             sample_out => crushed_left
         );
 
-    bitcrusher_right : entity work.bitcrusher_dynamic
+    bitcrusher_right : entity work.bitcrusher
         generic map (
             IN_WIDTH => 16
         )
@@ -391,7 +391,7 @@ begin
             sample_out => crushed_right
         );
 
-    decimator_left : entity work.sample_rate_decimator_dynamic
+    decimator_left : entity work.sample_rate_decimator
         generic map (
             IN_WIDTH      => 16,
             COUNTER_WIDTH => 6
@@ -405,7 +405,7 @@ begin
             sample_out   => decimated_left
         );
 
-    decimator_right : entity work.sample_rate_decimator_dynamic
+    decimator_right : entity work.sample_rate_decimator
         generic map (
             IN_WIDTH      => 16,
             COUNTER_WIDTH => 6

@@ -2,24 +2,25 @@ library IEEE;
 use IEEE.std_logic_1164.all;
 use IEEE.numeric_std.all;
 
-entity bitcrusher_core_tb is
-end entity bitcrusher_core_tb;
+entity bitcrusher_tb is
+end entity bitcrusher_tb;
 
-architecture sim of bitcrusher_core_tb is
+architecture sim of bitcrusher_tb is
     constant IN_WIDTH    : integer := 16;
     constant TARGET_BITS : integer := 6;
     signal sample_in     : std_logic_vector(IN_WIDTH - 1 downto 0) := (others => '0');
     signal sample_out    : std_logic_vector(IN_WIDTH - 1 downto 0);
+    signal bit_depth     : unsigned(4 downto 0) := to_unsigned(TARGET_BITS, 5);
 
     constant SHIFT : integer := IN_WIDTH - TARGET_BITS;
 begin
-    dut : entity work.bitcrusher_core
+    dut : entity work.bitcrusher
         generic map (
-            IN_WIDTH    => IN_WIDTH,
-            TARGET_BITS => TARGET_BITS
+            IN_WIDTH => IN_WIDTH
         )
         port map (
             sample_in  => sample_in,
+            bit_depth  => bit_depth,
             sample_out => sample_out
         );
 
@@ -65,7 +66,7 @@ begin
                 severity error;
         end loop;
 
-        report "Bitcrusher core test complete" severity note;
+        report "Bitcrusher test complete" severity note;
         wait;
     end process;
 end architecture sim;

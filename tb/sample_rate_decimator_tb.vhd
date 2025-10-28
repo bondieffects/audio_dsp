@@ -10,11 +10,12 @@ architecture sim of sample_rate_decimator_tb is
     constant IN_WIDTH          : integer := 16;
     constant DECIMATION_FACTOR : integer := 3;
 
-    signal clk          : std_logic := '0';
-    signal reset_n      : std_logic := '0';
-    signal sample_in    : std_logic_vector(IN_WIDTH - 1 downto 0) := (others => '0');
-    signal sample_valid : std_logic := '0';
-    signal sample_out   : std_logic_vector(IN_WIDTH - 1 downto 0);
+    signal clk               : std_logic := '0';
+    signal reset_n           : std_logic := '0';
+    signal sample_in         : std_logic_vector(IN_WIDTH - 1 downto 0) := (others => '0');
+    signal sample_valid      : std_logic := '0';
+    signal decimation_factor : unsigned(6 downto 0) := to_unsigned(DECIMATION_FACTOR, 7);
+    signal sample_out        : std_logic_vector(IN_WIDTH - 1 downto 0);
 
     constant CLK_PERIOD : time := 10 ns;
 begin
@@ -22,15 +23,15 @@ begin
 
     dut : entity work.sample_rate_decimator
         generic map (
-            IN_WIDTH          => IN_WIDTH,
-            DECIMATION_FACTOR => DECIMATION_FACTOR
+            IN_WIDTH => IN_WIDTH
         )
         port map (
-            clk          => clk,
-            reset_n      => reset_n,
-            sample_in    => sample_in,
-            sample_valid => sample_valid,
-            sample_out   => sample_out
+            clk               => clk,
+            reset_n           => reset_n,
+            sample_in         => sample_in,
+            sample_valid      => sample_valid,
+            decimation_factor => decimation_factor,
+            sample_out        => sample_out
         );
 
     stimulus : process

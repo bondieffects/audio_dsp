@@ -119,10 +119,8 @@ set_location_assignment PIN_126 -to segment[5]
 set_location_assignment PIN_124 -to segment[6]
 set_location_assignment PIN_127 -to segment[7]
 set_global_assignment -name VHDL_FILE seven_seg.vhd
-set_global_assignment -name VHDL_FILE bitcrusher_core.vhd
+set_global_assignment -name VHDL_FILE bitcrusher.vhd
 set_global_assignment -name VHDL_FILE sample_rate_decimator.vhd
-set_global_assignment -name VHDL_FILE bitcrusher_dynamic.vhd
-set_global_assignment -name VHDL_FILE sample_rate_decimator_dynamic.vhd
 set_global_assignment -name VHDL_FILE tb/simple_passthrough_TB.vhd
 set_global_assignment -name VHDL_FILE tb/i2s_tx_TB.vhd
 set_global_assignment -name VHDL_FILE tb/i2s_TB.vhd
