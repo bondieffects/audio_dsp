@@ -324,9 +324,7 @@ begin
             decimation_value => decimation_raw,
             cc_event         => cc_event_strobe,
             cc_number        => cc_number_raw,
-            cc_value_raw     => cc_value_raw,
-            pc_event         => pc_event_strobe,
-            pc_number        => pc_number_raw
+            cc_value_raw     => cc_value_raw
         );
 
     -- Register the MIDI-controlled parameters locally to keep this domain latch-free
