@@ -45,7 +45,7 @@ architecture rtl of sample_rate_decimator is
 
     -- Output register: holds the last accepted sample
     signal hold_reg : signed(IN_WIDTH - 1 downto 0) := (others => '0');
-    
+
     -- Downcounter: tracks when to accept the next sample
     signal counter  : unsigned(COUNTER_WIDTH - 1 downto 0) := (others => '0');
 begin
@@ -59,10 +59,10 @@ begin
         if reset_n = '0' then
             hold_reg <= (others => '0');
             counter  <= (others => '0');
-            
+
         elsif rising_edge(clk) then
             if sample_valid = '1' then
-                -- Clamp decimation factor to valid range
+                -- Clamp decimation factor to [1..64]
                 factor_int := to_integer(decimation_factor);
                 if factor_int < FACTOR_MIN then
                     factor_int := FACTOR_MIN;
@@ -71,26 +71,25 @@ begin
                 end if;
 
                 if factor_int = 1 then
-                    -- Bypass mode: every sample passes through immediately
+                    -- Bypass mode: don't hold samples, pass through immediately
                     hold_reg <= signed(sample_in);
                     counter  <= (others => '0');
                 else
-                    -- Decimation mode: use counter to determine when to update
+                    -- Decimation mode: count how long to hold samples
                     reload_value := to_unsigned(factor_int - 1, counter'length);
 
-                    -- Accept sample when counter reaches 0, otherwise decrement
-                    if counter = to_unsigned(0, counter'length) or counter > reload_value then
+                    -- When the counter reaches 0, latch new sample
+                    if counter = to_unsigned(0, counter'length) then
                         hold_reg <= signed(sample_in);  -- latch new sample
                         counter  <= reload_value;       -- reload counter for next cycle
                     else
-                        -- Reject this sample, just decrement counter
-                        counter <= counter - 1;
+                        counter <= counter - 1;  -- decrement counter
                     end if;
                 end if;
             end if;
         end if;
     end process;
 
-    -- Output is always the held register value
+    -- Output the held sample
     sample_out <= std_logic_vector(hold_reg);
 end architecture rtl;
