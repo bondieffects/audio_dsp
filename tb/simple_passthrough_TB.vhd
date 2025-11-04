@@ -1,4 +1,4 @@
--- Simple testbench for testing passthrough without PLL issues
+-- Simple testbench for testing passthrough without PLL
 library IEEE;
 use IEEE.std_logic_1164.all;
 use IEEE.numeric_std.all;
@@ -111,7 +111,7 @@ begin
         wait;
     end process;
 
-    -- I2S loopback stimulus - exactly like working i2s_TB.vhd
+    -- I2S loopback stimulus
     i2s_stimulus : process
     begin
         -- Wait for reset and stabilization
@@ -119,7 +119,6 @@ begin
         wait for 1 us;
         
         -- Create loopback: connect TX output to RX input
-        -- This creates proper I2S timing exactly like the working testbench
         loop
             wait for 10 ns;
             i2s_din <= i2s_dout;

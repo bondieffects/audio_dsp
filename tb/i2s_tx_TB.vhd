@@ -66,7 +66,7 @@ begin
         reset_n <= '0';
         wait for RESET_DELAY;
         reset_n <= '1';
-        wait;                     -- hold forever
+        wait;           -- hold forever
     end process;
 
     -- Word Select (WS) generation process

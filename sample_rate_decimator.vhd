@@ -3,8 +3,10 @@ use IEEE.std_logic_1164.all;
 use IEEE.numeric_std.all;
 
 -- ============================================================================
--- Sample rate decimator: holds input sample and only updates every Nth valid
--- sample. Designed for streaming audio paths where new samples arrive with a
+-- Sample rate decimator
+-- ============================================================================
+-- holds input sample and only updates every Nth valid sample.
+-- Designed for streaming audio paths where new samples arrive with a
 -- "sample_valid" strobe.
 -- ============================================================================
 entity sample_rate_decimator is

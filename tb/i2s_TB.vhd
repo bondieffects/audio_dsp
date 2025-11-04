@@ -375,7 +375,6 @@ begin
     -- ========================================================================
     -- PHILIPS I2S STANDARD COMPLIANCE MONITORING
     -- ========================================================================
-    -- Monitor I2S signals for Philips I2S standard compliance
     
     -- BCLK frequency and duty cycle monitoring
     bclk_monitor : process
@@ -493,7 +492,7 @@ begin
     -- ========================================================================
     -- END-OF-SIM TIMEOUT
     -- ========================================================================
-    -- Stop the simulation after a reasonable time, following pattern from other TBs
+    -- Stop the simulation after a reasonable time.
     stopper : process
     begin
         wait for 2 ms;  -- Allow enough time for I2S tests to complete
