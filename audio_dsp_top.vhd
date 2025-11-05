@@ -2,8 +2,8 @@
 -- SIMPLE I2S PASSTHROUGH - MINIMAL IMPLEMENTATION
 -- ============================================================================
 -- Simplest possible I2S passthrough for audio data
--- Uses audio_pll IP for master clock generation
--- Target: Cyclone IV EP4CE6E22C8
+-- audio_pll IP for master clock generation
+-- Board: Cyclone IV EP4CE6E22C8
 
 library IEEE;
 use IEEE.std_logic_1164.all;
@@ -23,10 +23,10 @@ entity audio_dsp_top is
         i2s_dout  : out std_logic;  -- Data to CODEC DAC - PIN_34
 
         -- Status LEDs
-        led       : out std_logic_vector(3 downto 0);   -- PIN_84 to 87
+        led       : out std_logic_vector(3 downto 0);   -- PIN_84 to _87
 
 		-- Seven Segments
-		segment      : out std_logic_vector(7 downto 0);    -- PIN_{128,121,125,129,132,126,124,127}
+		  segment      : out std_logic_vector(7 downto 0);    -- PIN_{128,121,125,129,132,126,124,127}
         seg_select   : out std_logic_vector(3 downto 0);    -- PIN_{133,135,136,137}
 
         -- Test points for debugging (optional - can be removed)
@@ -264,7 +264,7 @@ begin
     -- RESET
     -- ========================================================================
     pll_areset   <= '0';                -- Don't reset PLL
-    system_reset <= reset_n;            -- Simple: just use reset button
+    system_reset <= reset_n;            -- reset button
 
     -- ========================================================================
     -- AUDIO PLL INSTANTIATION

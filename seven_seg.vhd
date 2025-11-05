@@ -24,7 +24,6 @@ entity seven_seg is
 end entity seven_seg;
 
 architecture comp of seven_seg is
-    -- signals
     signal display_counter : unsigned(15 downto 0) := (others => '0');
     signal seg_clk         : unsigned(1 downto 0)  := (others => '0');
     signal sel_reg         : unsigned(1 downto 0) := (others => '0');
@@ -35,7 +34,7 @@ architecture comp of seven_seg is
         variable pattern : std_logic_vector(7 downto 0) := (others => '1');
     begin
         case c is
-            when '0' => pattern := "11000000";  -- a b c d e f
+            when '0' => pattern := "11000000";  -- 0: a b c d e f
             when '1' => pattern := "11111001";  -- 1: e f
             when '2' => pattern := "10100100";  -- 2: a b d e g
             when '3' => pattern := "10110000";  -- 3: a b c d g
